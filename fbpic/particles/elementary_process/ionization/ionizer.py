@@ -132,13 +132,13 @@ class Ionizer(object):
                     'for %s with level_start=%d.)' %(self.level_start,
                     self.level_max, element, self.level_start))
                 # Check that the dictionary contains Particles objects
-                assert isinstance(target_species[level], type(ionizable_species))
+                assert issubclass( type(target_species[level]), type(ionizable_species).mro()[-2]) #TODO
             # Convert to a list internally: the dictionary input is
             # just for less error-prone user input.
             self.target_species = [ target_species[level] \
                 for level in range(self.level_start, self.level_max) ]
             self.store_electrons_per_level = True
-        elif isinstance(target_species, type(ionizable_species)):
+        elif issubclass( type(target_species),  type(ionizable_species).mro()[-2]): #TODO
             # When passing a single Particles object
             self.target_species = [target_species]  # List of one element
             self.store_electrons_per_level = False
