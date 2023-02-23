@@ -1,10 +1,9 @@
-import warnings, os, operator, warnings
+import warnings, os, operator
 import numpy as np
-from scipy.constants import c, e, m_e
+from scipy.constants import c
 
 from fbpic.fields import Fields
 from fbpic.particles import Particles
-from fbpic.openpmd_diag.generic_diag import OpenPMDDiagnostic
 from fbpic.lpa_utils.bunch import get_space_charge_spect
 from fbpic.particles.elementary_process.cuda_numba_utils import \
     reallocate_and_copy_old
@@ -657,5 +656,3 @@ def add_cathode_from_arrays(sim, q, m, z_cathode, x,y,z,ux,uy,uz,w,
     sim.ptcl.append( cathode )
     sim.diags.append( cathode )
     return cathode
-
-

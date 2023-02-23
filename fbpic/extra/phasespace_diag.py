@@ -690,19 +690,3 @@ def zr_angleF(x,y,ux,uy,uz):
 zx_angle_CQ = CustomQuantity( 'zx_angle', zx_angleF )
 zy_angle_CQ = CustomQuantity( 'zy_angle', zy_angleF )
 zr_angle_CQ = CustomQuantity( 'zr_angle', zr_angleF )
-
-if __name__ == '__main__':
-    
-    import timeit
-    
-    N = 10000000
-    n = 1
-    x = np.random.random(N)
-    y = np.random.random(N)
-    ux = np.random.random(N)
-    uy = np.random.random(N)
-    uz = np.random.random(N)    
-
-    print(timeit.timeit( "zr_angleF(x,y,ux,uy,uz)", number=n, setup="from __main__ import x,y,ux,uy,uz,zr_angleF" ))
-    #print(timeit.timeit( "zr_angleF2(x,y,ux,uy,uz)", number=n, setup="from __main__ import x,y,ux,uy,uz,zr_angleF2" ))
-    
