@@ -439,7 +439,7 @@ class Simulation(object):
                 # (In the case of single-proc periodic simulations, particles
                 # are shifted by one box length, so they remain inside the box)
                 for species in self.ptcl:
-                    if hasattr(species, '_is_antenna'): 
+                    if hasattr(species, '_is_cathode'): 
                         species.inject_particles(self.time) 
                     self.comm.exchange_particles(species, fld, self.time)
                 for antenna in self.laser_antennas:

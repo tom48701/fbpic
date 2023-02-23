@@ -32,7 +32,7 @@ class Cathode(Particles):
         assert direction in ('forward', 'backward')
         # internal attribute used to trigger injection inside the main loop
         # there is possibly a better way to do this?
-        self._is_antenna = True
+        self._is_cathode = True
         
         # Register the arguments
         self.sim = sim
