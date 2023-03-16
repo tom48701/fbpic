@@ -62,7 +62,7 @@ def set_periodic_checkpoint( sim, period, checkpoint_dir='./checkpoints' ):
     if sim.use_pml:
         fieldtypes += ["Er_pml", "Et_pml", "Br_pml", "Bt_pml"]
     sim.checkpoints.append( FieldDiagnostic( period, sim.fld,
-                        fieldtypes=fieldtypes, write_dir=write_dir ) )
+                        fieldtypes=fieldtypes, write_dir=write_dir, sim=sim ) )
 
     # Register a periodic ParticleDiagnostic, which contains all
     # the particles which are present in the simulation
@@ -72,7 +72,7 @@ def set_periodic_checkpoint( sim, period, checkpoint_dir='./checkpoints' ):
 
     if len(particle_dict)>0:
         sim.checkpoints.append(
-            ParticleDiagnostic( period, particle_dict, write_dir=write_dir ) )
+            ParticleDiagnostic( period, particle_dict, write_dir=write_dir, sim=sim ) )
 
 def restart_from_checkpoint( sim, iteration=None,
                             checkpoint_dir='./checkpoints' ):

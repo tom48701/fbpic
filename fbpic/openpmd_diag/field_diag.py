@@ -15,7 +15,8 @@ class FieldDiagnostic(OpenPMDDiagnostic):
 
     def __init__(self, period=None, fldobject=None, comm=None,
                  fieldtypes=["rho", "E", "B", "J"], write_dir=None,
-                 iteration_min=0, iteration_max=np.inf, dt_period=None ) :
+                 iteration_min=0, iteration_max=np.inf, dt_period=None,
+                 sim=None ) :
         """
         Initialize the field diagnostic.
 
@@ -53,6 +54,10 @@ class FieldDiagnostic(OpenPMDDiagnostic):
         iteration_min, iteration_max: ints
             The iterations between which data should be written
             (`iteration_min` is inclusive, `iteration_max` is exclusive)
+            
+        sim : fbpic Simulation object, optional
+            Use this object to extract an unambiguous simulation time if 
+            provided
         """
         # Check input
         if fldobject is None:
@@ -65,6 +70,7 @@ class FieldDiagnostic(OpenPMDDiagnostic):
                             dt_period=dt_period, dt_sim=fldobject.dt )
 
         # Register the arguments
+        self.sim = sim
         self.fld = fldobject
         self.fieldtypes = fieldtypes
         self.coords = ['r', 't', 'z']
@@ -100,7 +106,12 @@ class FieldDiagnostic(OpenPMDDiagnostic):
 
         # Extract information needed for the openPMD attributes
         dt = self.fld.dt
-        time = iteration * dt
+        
+        if self.sim is None:
+            time = iteration * dt
+        else:
+            time = self.sim.time
+            
         dz = self.fld.interp[0].dz
         if self.comm is None:
             # No communicator: dump all the present subdomain

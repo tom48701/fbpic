@@ -364,156 +364,156 @@ def add_new_dense_species( sim, q, m, n=None, dens_func=None,
                             boost_positions_in_dens_func=False,
                             dense_macroparticles=True, weighting_method='asymptotic',
                             unalign_angles_method='irrational'):
-        """
-        Add a new species to the simulation, by default employing dense
-        macroparticle distribution
+    """
+    Add a new species to the simulation, by default employing dense
+    macroparticle distribution
+    
+    Parameters
+    ----------
+    See `Simulation.add_new_species` for most options
+    
+    dense_macroparticles: boolean, optional
+        Wether or not to use a dense macroparticle distribution. If this
+        is `False`, the resulting species is identical to a normal
+        Particles object, albeit by a different name.
         
-        Parameters
-        ----------
-        See `Simulation.add_new_species` for most options
+    weighting_method: str, optional
+        The particle weighting method. Accepts the following values:
+            
+        `uniform` 
+            Generate identically weighted particles.
+            This causes a slight increase in density and current on-axis.
+          
+        `quantised` - Generate particles that repeat the weights of
+            particles in the first cell. This means across all particles 
+            there will be only `p_nr` discrete weights (before modulation).
+            This causes a slight decrease in density and current on-axis.
+          
+        `asymptotic` - Use an adapted version of the standard particle
+            initialisation routine. Particles in the first cell have the 
+            same weights as the standard method, with particle weights in 
+            successive cells asymptoting towards a uniform value as the 
+            distance from the axis increases.
+          
+        Regardless of the method chosen, the same number of particles will
+        be created, and the total charge of those particles will be the 
+        same. Only the distribution of weights is affected.
+        Default: `asymptotic`
         
-        dense_macroparticles: boolean, optional
-            Wether or not to use a dense macroparticle distribution. If this
-            is `False`, the resulting species is identical to a normal
-            Particles object, albeit by a different name.
-            
-        weighting_method: str, optional
-            The particle weighting method. Accepts the following values:
-                
-            `uniform` 
-                Generate identically weighted particles.
-                This causes a slight increase in density and current on-axis.
-              
-            `quantised` - Generate particles that repeat the weights of
-                particles in the first cell. This means across all particles 
-                there will be only `p_nr` discrete weights (before modulation).
-                This causes a slight decrease in density and current on-axis.
-              
-            `asymptotic` - Use an adapted version of the standard particle
-                initialisation routine. Particles in the first cell have the 
-                same weights as the standard method, with particle weights in 
-                successive cells asymptoting towards a uniform value as the 
-                distance from the axis increases.
-              
-            Regardless of the method chosen, the same number of particles will
-            be created, and the total charge of those particles will be the 
-            same. Only the distribution of weights is affected.
-            Default: `asymptotic`
-            
-        unalign_angles_method: str, optional
-            Set the method used to unalign particles around the azimuth.
-            See particles.injection.continuous_injection.unalign_angles.
-            Default: `irrational`
-        """
-        # Define a temporary density function
-        # (will be modified below, in the case `boost_positions_in_dens_func`)
-        new_dens_func = dens_func
+    unalign_angles_method: str, optional
+        Set the method used to unalign particles around the azimuth.
+        See particles.injection.continuous_injection.unalign_angles.
+        Default: `irrational`
+    """
+    # Define a temporary density function
+    # (will be modified below, in the case `boost_positions_in_dens_func`)
+    new_dens_func = dens_func
 
-        # Check if any macroparticle need to be injected
-        if n is not None:
-            # Check that all required arguments are passed
-            for var in [p_nz, p_nr, p_nt]:
-                if var is None:
-                    raise ValueError(
-                    'If the density `n` is passed to `add_new_species`,\n'
-                    'then the arguments `p_nz`, `p_nr` and `p_nt` need '
-                    'to be passed too.')
+    # Check if any macroparticle need to be injected
+    if n is not None:
+        # Check that all required arguments are passed
+        for var in [p_nz, p_nr, p_nt]:
+            if var is None:
+                raise ValueError(
+                'If the density `n` is passed to `add_new_species`,\n'
+                'then the arguments `p_nz`, `p_nr` and `p_nt` need '
+                'to be passed too.')
 
-            # Automatically convert input quantities to the boosted frame
-            if sim.boost is not None:
-                gamma_m = np.sqrt(1. + uz_m**2 + ux_m**2 + uy_m**2)
-                beta_m_lab = uz_m/gamma_m
-                # Transform positions and density
-                p_zmin, p_zmax = sim.boost.copropag_length(
-                    [ p_zmin, p_zmax ], beta_object=beta_m_lab )
-                n, = sim.boost.copropag_density([ n ], beta_object=beta_m_lab )
-                # Transform longitudinal thermal velocity
-                # The formulas below are approximate, and are obtained
-                # by perturbation of the Lorentz transform for uz
-                if uz_m == 0:
-                    if uz_th > 0.1:
-                        warnings.warn(
-                        "The thermal distribution is approximate in "
-                        "boosted-frame simulations, and may not be accurate "
-                        "enough for uz_th > 0.1")
-                    uz_th = sim.boost.gamma0 * uz_th
-                else:
-                    if uz_th > 0.1 * uz_m:
-                        warnings.warn(
-                        "The thermal distribution is approximate in "
-                        "boosted-frame simulations, and may not be accurate "
-                        "enough for uz_th > 0.1 * uz_m")
-                    uz_th = sim.boost.gamma0 * \
-                            (1. - sim.boost.beta0*beta_m_lab) * uz_th
-                # Finally transform the longitudinal momentum
-                uz_m = sim.boost.gamma0*( uz_m - sim.boost.beta0*gamma_m )
+        # Automatically convert input quantities to the boosted frame
+        if sim.boost is not None:
+            gamma_m = np.sqrt(1. + uz_m**2 + ux_m**2 + uy_m**2)
+            beta_m_lab = uz_m/gamma_m
+            # Transform positions and density
+            p_zmin, p_zmax = sim.boost.copropag_length(
+                [ p_zmin, p_zmax ], beta_object=beta_m_lab )
+            n, = sim.boost.copropag_density([ n ], beta_object=beta_m_lab )
+            # Transform longitudinal thermal velocity
+            # The formulas below are approximate, and are obtained
+            # by perturbation of the Lorentz transform for uz
+            if uz_m == 0:
+                if uz_th > 0.1:
+                    warnings.warn(
+                    "The thermal distribution is approximate in "
+                    "boosted-frame simulations, and may not be accurate "
+                    "enough for uz_th > 0.1")
+                uz_th = sim.boost.gamma0 * uz_th
+            else:
+                if uz_th > 0.1 * uz_m:
+                    warnings.warn(
+                    "The thermal distribution is approximate in "
+                    "boosted-frame simulations, and may not be accurate "
+                    "enough for uz_th > 0.1 * uz_m")
+                uz_th = sim.boost.gamma0 * \
+                        (1. - sim.boost.beta0*beta_m_lab) * uz_th
+            # Finally transform the longitudinal momentum
+            uz_m = sim.boost.gamma0*( uz_m - sim.boost.beta0*gamma_m )
 
-                # Create a temporary density function
-                # that takes into account the Lorentz boost of the positions
-                # (The motion of the plasma is further taken into account
-                # in continuous_injection.py.)
-                if boost_positions_in_dens_func and (dens_func is not None):
+            # Create a temporary density function
+            # that takes into account the Lorentz boost of the positions
+            # (The motion of the plasma is further taken into account
+            # in continuous_injection.py.)
+            if boost_positions_in_dens_func and (dens_func is not None):
 
-                    coef = sim.boost.gamma0*(1 - beta_m_lab*sim.boost.beta0)
-                    args = _check_dens_func_arguments( dens_func )
-                    if args == ['z', 'r']:
-                        def new_dens_func( z, r ):
-                            return dens_func( coef*z, r )
-                    elif args == ['x', 'y', 'z']:
-                        def new_dens_func( x, y, z ):
-                            return dens_func( x, y, coef*z )
+                coef = sim.boost.gamma0*(1 - beta_m_lab*sim.boost.beta0)
+                args = _check_dens_func_arguments( dens_func )
+                if args == ['z', 'r']:
+                    def new_dens_func( z, r ):
+                        return dens_func( coef*z, r )
+                elif args == ['x', 'y', 'z']:
+                    def new_dens_func( x, y, z ):
+                        return dens_func( x, y, coef*z )
 
-            # Modify input particle bounds, in order to only initialize the
-            # particles in the local sub-domain
-            zmin_local_domain, zmax_local_domain = sim.comm.get_zmin_zmax(
-                                        local=True, rank=sim.comm.rank,
-                                        with_damp=False, with_guard=False )
-            p_zmin = max( zmin_local_domain, p_zmin )
-            p_zmax = min( zmax_local_domain, p_zmax )
-            # Avoid that particles get initialized in the radial PML cells
-            rmax = sim.comm.get_rmax( with_damp=False )
-            p_rmax = min( rmax, p_rmax )
+        # Modify input particle bounds, in order to only initialize the
+        # particles in the local sub-domain
+        zmin_local_domain, zmax_local_domain = sim.comm.get_zmin_zmax(
+                                    local=True, rank=sim.comm.rank,
+                                    with_damp=False, with_guard=False )
+        p_zmin = max( zmin_local_domain, p_zmin )
+        p_zmax = min( zmax_local_domain, p_zmax )
+        # Avoid that particles get initialized in the radial PML cells
+        rmax = sim.comm.get_rmax( with_damp=False )
+        p_rmax = min( rmax, p_rmax )
 
-            # Modify again the input particle bounds, so that
-            # they fall exactly on the grid, and infer the number of particles
-            p_zmin, p_zmax, Npz = adapt_to_grid( sim.fld.interp[0].z,
-                                p_zmin, p_zmax, p_nz )
-            p_rmin, p_rmax, Npr = adapt_to_grid( sim.fld.interp[0].r,
-                                p_rmin, p_rmax, p_nr )
-            dz_particles = sim.comm.dz/p_nz
+        # Modify again the input particle bounds, so that
+        # they fall exactly on the grid, and infer the number of particles
+        p_zmin, p_zmax, Npz = adapt_to_grid( sim.fld.interp[0].z,
+                            p_zmin, p_zmax, p_nz )
+        p_rmin, p_rmax, Npr = adapt_to_grid( sim.fld.interp[0].r,
+                            p_rmin, p_rmax, p_nr )
+        dz_particles = sim.comm.dz/p_nz
 
-        else:
-            # Check consistency of arguments
-            if (dens_func is not None) or (p_nz is not None) or \
-                (p_nr is not None) or (p_nt is not None):
-                warnings.warn(
-                    'It seems that you provided the arguments `dens_func`, '
-                    '`p_nz`, `p_nr` or `p_nz`\nHowever no particle density '
-                    '(`n` or `n_e`) was given.\nTherefore, no particles will'
-                    'be created.')
-            # Convert arguments to acceptable arguments for `Particles`
-            # but which will result in no macroparticles being injected
-            n = 0
-            p_zmin = p_zmax = p_rmin = p_rmax = 0
-            Npz = Npr = p_nt = 0
-            continuous_injection = False
-            dz_particles = 0.
+    else:
+        # Check consistency of arguments
+        if (dens_func is not None) or (p_nz is not None) or \
+            (p_nr is not None) or (p_nt is not None):
+            warnings.warn(
+                'It seems that you provided the arguments `dens_func`, '
+                '`p_nz`, `p_nr` or `p_nz`\nHowever no particle density '
+                '(`n` or `n_e`) was given.\nTherefore, no particles will'
+                'be created.')
+        # Convert arguments to acceptable arguments for `Particles`
+        # but which will result in no macroparticles being injected
+        n = 0
+        p_zmin = p_zmax = p_rmin = p_rmax = 0
+        Npz = Npr = p_nt = 0
+        continuous_injection = False
+        dz_particles = 0.
 
-        # Create the new species
-        new_species = DenseParticles( q=q, m=m, n=n, dens_func=new_dens_func,
-                        Npz=Npz, zmin=p_zmin, zmax=p_zmax,
-                        Npr=Npr, rmin=p_rmin, rmax=p_rmax,
-                        Nptheta=p_nt, dt=sim.dt,
-                        dr_sim=sim.comm.dr, p_nr=p_nr,
-                        particle_shape=sim.particle_shape,
-                        use_cuda=sim.use_cuda, grid_shape=sim.grid_shape,
-                        ux_m=ux_m, uy_m=uy_m, uz_m=uz_m,
-                        ux_th=ux_th, uy_th=uy_th, uz_th=uz_th,
-                        continuous_injection=continuous_injection,
-                        dz_particles=dz_particles,
-                        dense_macroparticles=dense_macroparticles, weighting_method=weighting_method,
-                        unalign_angles_method=unalign_angles_method)
+    # Create the new species
+    new_species = DenseParticles( q=q, m=m, n=n, dens_func=new_dens_func,
+                    Npz=Npz, zmin=p_zmin, zmax=p_zmax,
+                    Npr=Npr, rmin=p_rmin, rmax=p_rmax,
+                    Nptheta=p_nt, dt=sim.dt,
+                    dr_sim=sim.comm.dr, p_nr=p_nr,
+                    particle_shape=sim.particle_shape,
+                    use_cuda=sim.use_cuda, grid_shape=sim.grid_shape,
+                    ux_m=ux_m, uy_m=uy_m, uz_m=uz_m,
+                    ux_th=ux_th, uy_th=uy_th, uz_th=uz_th,
+                    continuous_injection=continuous_injection,
+                    dz_particles=dz_particles,
+                    dense_macroparticles=dense_macroparticles, weighting_method=weighting_method,
+                    unalign_angles_method=unalign_angles_method)
 
-        # Add it to the list of species and return it to the user
-        sim.ptcl.append( new_species )
-        return new_species
+    # Add it to the list of species and return it to the user
+    sim.ptcl.append( new_species )
+    return new_species

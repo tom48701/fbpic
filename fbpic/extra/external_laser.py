@@ -5,7 +5,7 @@ from fbpic.lpa_utils.external_fields import ExternalField
 
 def add_external_laser(sim, a0, w0, ctau, zf, z_offset=0., lambda0=8e-7,
                theta=0., cep_phase=0., theta_pol=0., n_e=0.,
-               gamma_boost=None ):
+               gamma_boost=None, t_max=math.inf ):
     """
     Add a laser to the simulation made up of external fields. Only the 
     transverse E and B fields are initialised. The laser is modelled as a 
@@ -66,7 +66,16 @@ def add_external_laser(sim, a0, w0, ctau, zf, z_offset=0., lambda0=8e-7,
         Lorentz factor for boosted frame simulations.
         Default: None
         
+    t_max: float, optional
+        Time limit for initialising the laser. Convenience option to simplify 
+        restarts.
+        Default: inf
+        
     """
+    if sim.time > t_max:
+        print(f't_max exceeded, skipping external laser ({sim.time} > {t_max})')
+        return
+    
     k0 = 2*pi/lambda0
     omega0 = 2*pi*c/lambda0
     n_c = omega0**2*m_e*epsilon_0/e**2
@@ -127,15 +136,15 @@ def add_external_laser(sim, a0, w0, ctau, zf, z_offset=0., lambda0=8e-7,
         z = (zc-zf)*cos + xc*sin
         x = -(zc-zf)*sin + xc*cos
         # now coordinates are in the proper orientation, proceed as normal
-        r = math.sqrt(x**2 + y**2)
+        r2 = x**2 + y**2
         w = w0 * math.sqrt(1 + (z/zR)**2) # spot size
         if z == 0.:     # avoid a division by zero at the focus
             curv = 0.
         else:
             R = z*(1 + (zR/z)**2) # radius of curvature
-            curv = 0.5*k*r**2/R # curvature phase term
+            curv = 0.5*k*r2/R # curvature phase term
         gouy = math.atan(z/zR)  # Gouy phase term
-        envelope = math.exp( -(r/w)**2 - ((z-z_offset-t*vg)/(ctau))**2 ) # moving envelope
+        envelope = math.exp( -r2/w**2 - ((z-z_offset-t*vg)/(ctau))**2 ) # moving envelope
         phase = math.cos( k*z - omega0*t + curv + gouy + cep_phase ) # laser phase
         return( F + amplitude * w0/w * envelope * phase )
 

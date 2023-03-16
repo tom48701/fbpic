@@ -21,7 +21,7 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
     def __init__(self, period=None, species={}, comm=None,
         name=None, phase_space=[], bins=[], edges=None, custom_quantities=[],
         move_with_window=True, deposit='w', select=None, write_dir=None, 
-        iteration_min=0, iteration_max=np.inf, dt_period=None ) :
+        iteration_min=0, iteration_max=np.inf, dt_period=None, sim=None ) :
         """
         Initialize a phase space diagnostic.
 
@@ -103,6 +103,10 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
         iteration_min, iteration_max: ints
             The iterations between which data should be written
             (`iteration_min` is inclusive, `iteration_max` is exclusive)
+            
+        sim : fbpic Simulation object, optional
+            Use this object to extract an unambiguous simulation time if 
+            provided
         """
         # Check input
         if len(species) == 0:
@@ -141,6 +145,7 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
         self.deposit = deposit
         self.move_with_window = move_with_window
         self.custom_quantities = custom_quantities
+        self.sim = sim
         
         # Register the dimensionality of the diagnostic
         self.Ndims = len(phase_space)
@@ -228,7 +233,11 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
             f = h5py.File( fullpath, mode="a" )
 
             # Setup its attributes
-            self.setup_openpmd_file( f, iteration, iteration*self.dt, self.dt)
+            if self.sim is None:
+                time = iteration*self.dt
+            else:
+                time = self.sim.time
+            self.setup_openpmd_file( f, iteration, time, self.dt)
 
         # Loop over the different species and
         # particle quantities that should be written

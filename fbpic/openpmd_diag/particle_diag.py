@@ -19,7 +19,7 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
     def __init__(self, period=None, species={}, comm=None,
         particle_data=["position", "momentum", "weighting"],
         select=None, write_dir=None, iteration_min=0, iteration_max=np.inf,
-        subsampling_fraction=None, dt_period=None ) :
+        subsampling_fraction=None, dt_period=None, sim=None ) :
         """
         Initialize the particle diagnostics.
 
@@ -73,6 +73,10 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
         subsampling_fraction : float, optional
             If this is not None, the particle data is subsampled with
             subsampling_fraction probability
+
+        sim : fbpic Simulation object, optional
+            Use this object to extract an unambiguous simulation time if 
+            provided
         """
         # Check input
         if len(species) == 0:
@@ -94,7 +98,8 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
         self.species_dict = species
         self.select = select
         self.subsampling_fraction = subsampling_fraction
-
+        self.sim = sim
+        
         # For each species, get the particle arrays to be written
         self.array_quantities_dict = {}
         self.constant_quantities_dict = {}
@@ -230,7 +235,11 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
             f = h5py.File( fullpath, mode="a" )
 
             # Setup its attributes
-            self.setup_openpmd_file( f, iteration, iteration*self.dt, self.dt)
+            if self.sim is None:
+                time = iteration*self.dt
+            else:
+                time = self.sim.time
+            self.setup_openpmd_file( f, iteration, time, self.dt)
 
         # Loop over the different species and
         # particle quantities that should be written

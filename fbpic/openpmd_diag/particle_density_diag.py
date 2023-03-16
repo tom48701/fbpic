@@ -82,7 +82,7 @@ class ParticleChargeDensityDiagnostic(FieldDiagnostic):
 
         # Extract information needed for the openPMD attributes
         dt = self.fld.dt
-        time = iteration * dt
+        time = self.sim.time #iteration * dt
         dz = self.fld.interp[0].dz
         zmin, _ = self.comm.get_zmin_zmax(
                 local=False, with_damp=False, with_guard=False )
