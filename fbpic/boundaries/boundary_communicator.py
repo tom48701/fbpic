@@ -51,7 +51,8 @@ class BoundaryCommunicator(object):
     def __init__( self, Nz, zmin, zmax, Nr, rmax, Nm, dt, v_comoving,
             use_galilean, boundaries, n_order, n_guard, n_damp,
             cdt_over_dr, n_inject=None, exchange_period=None,
-            use_all_mpi_ranks=True):
+            use_all_mpi_ranks=True,
+            custom_domain_decomposition=None):
         """
         Initializes a communicator object.
 
@@ -333,7 +334,33 @@ class BoundaryCommunicator(object):
         self.use_pml = (boundaries['r'] == "open")
         if self.use_pml:
             self.pml_damper = PMLDamper( self.nr_damp, cdt_over_dr )
+        
+        # register and check the custom domain decomposition
+        self.custom_domain_decomposition = custom_domain_decomposition
+        if custom_domain_decomposition is not None:
+            assert len(custom_domain_decomposition) == self.size, \
+            'Decomposition scheme must be the same size as the MPI domain '
+            f'(exptected {self.size}, got {len(custom_domain_decomposition)})'
+            
+            iz_last = 0
+            Nz_sum = 0
+            if self.rank==0:
+                print( 'Using a custom domain decomposition:')
+            for rank in range(self.size):
+                iz = custom_domain_decomposition[rank][0]
+                iz_stop = custom_domain_decomposition[rank][1]
+                
+                assert iz == iz_last, f'Domain edges must be continuous between ranks ({iz} != {iz_last})'
+                iz_last = iz_stop
+                
+                Nz_sum += iz_stop - iz
+                
+                if self.rank == 0:
+                    print( f'  rank {rank}: cells {iz} -> {iz_stop}  ({iz_stop - iz} total)')    
+                
+            assert Nz_sum == self._Nz_global_domain, f'Global domain must span {self._Nz_global_domain} total cells (got {Nz_sum})'
 
+            
 
     def divide_into_domain( self ):
         """
@@ -436,14 +463,21 @@ class BoundaryCommunicator(object):
 
         # Get the local number of cells
         if local:
-            # First: get the number of cells without guard cells and damp cells
-            # Divide the number of cells equally between procs
-            Nz_per_proc = int(self._Nz_global_domain/self.size)
-            Nz = Nz_per_proc
-            iz = rank * Nz_per_proc
-            # The last proc gets the extra cells
-            if rank == self.size-1:
-                Nz += (self._Nz_global_domain)%(self.size)
+            if self.custom_domain_decomposition is not None:
+                (iz, iz_stop) = self.custom_domain_decomposition[rank]
+                Nz = iz_stop - iz
+                
+            else:
+                # First: get the number of cells without guard cells and damp cells
+                # Divide the number of cells equally between procs
+                Nz_per_proc = int(self._Nz_global_domain/self.size)
+                Nz = Nz_per_proc
+                iz = rank * Nz_per_proc
+                
+                # The last proc gets the extra cells
+                if rank == self.size-1:
+                    Nz += (self._Nz_global_domain)%(self.size)
+                    
             # Add damp cells if requested (only for first and last sub-domain)
             if with_damp:
                 if rank == 0:

@@ -19,6 +19,7 @@ def add_particle_bunch(sim, q, m, gamma0, n, p_zmin, p_zmax, p_rmin, p_rmax,
                        p_nr=2, p_nz=2, p_nt=4, dens_func=None, boost=None,
                        direction='forward', z_injection_plane=None,
                        initialize_self_field=True,
+                       ux_th=0., uy_th=0., uz_th=0.,
                        boost_positions_in_dens_func=False ):
     """
     Introduce a simple relativistic particle bunch in the simulation,
@@ -108,6 +109,7 @@ def add_particle_bunch(sim, q, m, gamma0, n, p_zmin, p_zmax, p_rmin, p_rmax,
             p_nz=p_nz, p_nr=p_nr, p_nt=p_nt,
             p_zmin=p_zmin, p_zmax=p_zmax,
             p_rmin=p_rmin, p_rmax=p_rmax,
+            ux_th=ux_th, uy_th=uy_th, uz_th=uz_th,
             continuous_injection=False,
             dens_func=dens_func, uz_m=uz_m,
             boost_positions_in_dens_func=boost_positions_in_dens_func )

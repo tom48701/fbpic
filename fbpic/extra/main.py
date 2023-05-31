@@ -1,47 +1,241 @@
-# CUDA setup first
+# Copyright 2016, FBPIC contributors
+# Authors: Remi Lehe, Manuel Kirchen, Kevin Peters, Soeren Jalas
+# License: 3-Clause-BSD-LBNL
+"""
+Fourier-Bessel Particle-In-Cell (FB-PIC) main file
+
+This file steers and controls the simulation.
+"""
+# When cuda is available, select one GPU per mpi process
+# (This needs to be done before the other imports,
+# as it sets the cuda context)
+from fbpic.utils.mpi import MPI
+# Check if threading is available
+from fbpic.utils.threading import threading_enabled, numba_version
 # Check if CUDA is available, then import CUDA functions
 from fbpic.utils.cuda import cuda_installed, \
     cupy_installed, cupy_version, numba_cuda_installed
 if cuda_installed:
-    from fbpic.utils.cuda import send_data_to_gpu, receive_data_from_gpu
+    from fbpic.utils.cuda import send_data_to_gpu, \
+                receive_data_from_gpu, mpi_select_gpus
+    mpi_select_gpus( MPI )
     if cupy_installed:
         import cupy
 
-# standard modules
+# Import the rest of the requirements
 import sys, signal
-# fbpic modules
-from fbpic.utils.mpi import comm as mpi_comm
-from fbpic.utils.mpi import MPI
+import warnings
+import numba
+import numpy as np
+from scipy.constants import m_e, m_p, e, c
 from fbpic.main import Simulation as SimulationParent
-from fbpic.utils.printing import ProgressBar
 from fbpic.openpmd_diag import set_periodic_checkpoint
+from fbpic.utils.printing import ProgressBar, print_simulation_setup
+from fbpic.lpa_utils.boosted_frame import BoostConverter
+from fbpic.fields import Fields
+from fbpic.boundaries import BoundaryCommunicator
 
-# define the SIGTERM handler class
-class SigtermHandler:
-    def __init__(self):
-        self.sigterm_recieved = False 
-        signal.signal( signal.SIGTERM, self.handle )
-        #signal.signal( signal.SIGINT, self.handle )
-    def handle(self, *args):
-        print( 'SIGTERM recieved', flush=True )
-        self.sigterm_recieved = True
-# create an instance
-sigterm_handler = SigtermHandler()
+# define the signal handler class
+class SignalHandler:
+    def __init__(self, num):
+        """
+        Create a flag for a specific signal code
+        
+        SIGTERM : 15
+        SIGINT  : 2
+        SIGUSR1 : 10    (unix only)
+        """
+        self.num = num
+        self.signal_recieved = False 
+        signal.signal( num, self._handle )
+        
+    def _handle(self, *args):
+        self.signal_recieved = True
 
 class Simulation(SimulationParent):
     
     # modified init
-    def __init__(self, *args, t0=0, **kwargs):
-        SimulationParent.__init__(self, *args, **kwargs)
+    def __init__(self, Nz, zmax, Nr, rmax, Nm, dt,
+                 p_zmin=-np.inf, p_zmax=np.inf, p_rmin=0, p_rmax=np.inf,
+                 p_nz=None, p_nr=None, p_nt=None, n_e=None, zmin=0.,
+                 n_order=-1, dens_func=None, filter_currents=True,
+                 v_comoving=None, use_galilean=True,
+                 initialize_ions=False, use_cuda=False, n_guard=None,
+                 n_damp={'z':64, 'r':32},
+                 exchange_period=None,
+                 current_correction='curl-free',
+                 boundaries={'z':'periodic', 'r':'reflective'},
+                 gamma_boost=None, use_all_mpi_ranks=True,
+                 particle_shape='linear', verbose_level=1,
+                 smoother=None, use_ruyten_shapes=True,
+                 use_modified_volume=True, 
+                 t0=0., i0=0, shutdown_signal=None, 
+                 custom_domain_decomposition=None):
+        """
+        New Parameters
+        --------------
+        t0: float, optional
+            Set a start time other than zero.
         
-        # set an arbitrary start time
+        i0: int, optional
+            Set a start iteration other than zero.
+            
+        shutdown_signal: int or signal, optional
+            The signal used to trigger early shutdown. 
+            Defaults to SIGUSR1 on Unix and SIGTERM on Windows.
+        """
+        # Check whether to use CUDA
+        self.use_cuda = use_cuda
+        if self.use_cuda and not cuda_installed:
+            warning_message = 'GPU not available for the simulation.\n'
+            if not numba_cuda_installed:
+                warning_message += \
+                '(This is because the `numba` package was not able to find a GPU.)\n'
+            elif not cupy_installed:
+                warning_message += \
+                '(This is because the `cupy` package is not installed.)\n'
+            warning_message += 'Performing the simulation on CPU.'
+            warnings.warn( warning_message )
+            self.use_cuda = False
+        # Check that cupy, numba and Python have the right version
+        if self.use_cuda:
+            if cupy_version < (7,0):
+                raise RuntimeError(
+                    'In order to run on GPUs, FBPIC version 0.20 and later \n'
+                    'requires `cupy` version 7.0 (or later).\n(The `cupy` '
+                    'version on your current system is %d.%d.)\nPlease '
+                    'install the latest version of `cupy`.' %cupy_version)
+            elif numba_version < (0,46):
+                raise RuntimeError(
+                    'In order to run on GPUs, FBPIC version 0.16 and later \n'
+                    'requires `numba` version 0.46 (or later).\n(The `numba` '
+                    'version on your current system is %d.%d.)\nPlease install'
+                    ' the latest version of `numba`.' %numba_version)
+            elif sys.version_info.major < 3:
+                raise RuntimeError(
+                    'In order to run on GPUs, FBPIC version 0.16 and later \n'
+                    'requires Python 3.\n(The Python version on your current '
+                    'system is Python 2.)\nPlease install Python 3.')
+        # CPU multi-threading
+        self.use_threading = threading_enabled
+        if self.use_threading:
+            self.cpu_threads = numba.config.NUMBA_NUM_THREADS
+        else:
+            self.cpu_threads = 1
+
+        # Register the comoving parameters
+        self.v_comoving = v_comoving
+        self.use_galilean = use_galilean
+        if v_comoving is None:
+            self.use_galilean = False
+
+        # When running the simulation in a boosted frame, convert the arguments
+        if gamma_boost is not None:
+            self.boost = BoostConverter( gamma_boost )
+            zmin, zmax, dt = self.boost.copropag_length([ zmin, zmax, dt ])
+        else:
+            self.boost = None
+        # Register time step
+        self.dt = dt
+
+        # Initialize the boundary communicator
+        cdt_over_dr = c*dt / (rmax/Nr)
+        self.comm = BoundaryCommunicator( Nz, zmin, zmax, Nr, rmax, Nm, dt,
+            self.v_comoving, self.use_galilean, boundaries, n_order,
+            n_guard, n_damp, cdt_over_dr, None, exchange_period,
+            use_all_mpi_ranks, custom_domain_decomposition=custom_domain_decomposition )
+        self.use_pml = self.comm.use_pml
+        # Modify domain region
+        zmin, zmax, Nz = self.comm.divide_into_domain()
+        Nr = self.comm.get_Nr( with_damp=True )
+        rmax = self.comm.get_rmax( with_damp=True )
+        # Initialize the field structure
+        self.fld = Fields( Nz, zmax, Nr, rmax, Nm, dt,
+                    n_order=n_order, zmin=zmin,
+                    v_comoving=v_comoving,
+                    use_pml=self.use_pml,
+                    use_galilean=use_galilean,
+                    current_correction=current_correction,
+                    use_cuda=self.use_cuda,
+                    smoother=smoother,
+                    # Only create threading buffers when running on CPU
+                    create_threading_buffers=(self.use_cuda is False),
+                    use_ruyten_shapes=use_ruyten_shapes,
+                    use_modified_volume=use_modified_volume )
+
+        # Initialize the electrons and the ions
+        self.grid_shape = self.fld.interp[0].Ez.shape
+        self.particle_shape = particle_shape
+        self.ptcl = []
+        if n_e is not None:
+            # - Initialize the electrons
+            self.add_new_species( q=-e, m=m_e, n=n_e, dens_func=dens_func,
+                                  p_nz=p_nz, p_nr=p_nr, p_nt=p_nt,
+                                  p_zmin=p_zmin, p_zmax=p_zmax,
+                                  p_rmin=p_rmin, p_rmax=p_rmax )
+            # - Initialize the ions
+            if initialize_ions:
+                self.add_new_species( q=e, m=m_p, n=n_e, dens_func=dens_func,
+                                  p_nz=p_nz, p_nr=p_nr, p_nt=p_nt,
+                                  p_zmin=p_zmin, p_zmax=p_zmax,
+                                  p_rmin=p_rmin, p_rmax=p_rmax )
+                
+
+        # allow for an arbitrary start time and iteration
         self.time = t0
+        self.iteration = i0
+        # Register the filtering flag
+        self.filter_currents = filter_currents
+
+        # Initialize an empty list of external fields
+        self.external_fields = []
+        # Initialize an empty list of diagnostics and checkpoints
+        # (Checkpoints are used for restarting the simulation)
+        self.diags = []
+        self.checkpoints = []
+        # Initialize an empty list of laser antennas
+        self.laser_antennas = []
+        # Initialize an empty list of mirrors
+        self.mirrors = []
+
+        # Print simulation setup
+        print_simulation_setup( self, verbose_level=verbose_level )
+
+
+        # set the trigger signal if none specified
+        if shutdown_signal is None:   
+            # USR1 is cleaner, but doesn't exist on windows. TERM works as well
+            try:
+                sig = signal.SIGUSR1
+            except AttributeError:
+                sig = signal.SIGTERM
+        else:
+            sig = shutdown_signal
+    
+        self.handler = SignalHandler(sig)
+        
+    def write_exit_checkpoint(self):
+        # create a copy of the user-created checkpoints first
+        user_checkpoints = self.checkpoints[:]
+        # clear the checkpoint list
+        self.checkpoints = []
+        # make the one-time checkpoint
+        set_periodic_checkpoint(self, 1)
+        for checkpoint in self.checkpoints:
+            checkpoint.write( self.iteration )
+        # swap the user checkpoints back in
+        self.checkpoints = user_checkpoints[:]
+        
+    def shutdown(self):
+        if self.comm.rank == 0:
+            print('Shutting down.')
+        sys.exit(0)
         
     # modified step method
     def step(self, N=1, correct_currents=True,
              correct_divE=False, use_true_rho=False,
              move_positions=True, move_momenta=True, show_progress=True,
-             write_termination_checkpoint=False):
+             write_exit_checkpoint=False):
         """
         Perform N PIC cycles.
 
@@ -70,8 +264,8 @@ class Simulation(SimulationParent):
         show_progress: bool, optional
             Whether to show a progression bar
             
-        write_termination_checkpoint: bool, optional
-            Whether to write a checkpoint in the even a SIGTERM is invoked
+        write_exit_checkpoint: bool, optional
+            Whether to write a checkpoint in the event a SIGTERM is invoked
         """
         # Shortcuts
         ptcl = self.ptcl
@@ -118,11 +312,19 @@ class Simulation(SimulationParent):
 
         # Loop over timesteps
         for i_step in range(N):
+
+            if self.handler.signal_recieved: # gracefully close down upon recieving the signal
+                
+                # Print the measured time taken by the PIC cycle
+                if show_progress and (self.comm.rank==0):
+                    progress_bar.print_summary()
+
+                if write_exit_checkpoint:
+                    self.write_exit_checkpoint()
+                    
+                self.shutdown()
             
-            print(i_step, sigterm_handler.sigterm_recieved, flush=True)
-            
-            if not sigterm_handler.sigterm_recieved:
-            
+            else: # normal loop
                 # Show a progression bar and calculate ETA
                 if show_progress and self.comm.rank==0:
                     progress_bar.time( i_step )
@@ -269,29 +471,13 @@ class Simulation(SimulationParent):
                 for checkpoint in self.checkpoints:
                     checkpoint.write( self.iteration )
             
-            else: # if a sigterm _has_ been recieved
-                print( 'PIC loop diverted', self.comm.rank, flush=True )
-                
-                if write_termination_checkpoint:
-                    print( 'writing termination checkpoint...', self.comm.rank, flush=True )
-                    # clear and replace any checkpoints
-                    self.checkpoints = []
-                    set_periodic_checkpoint(self, 1)
-                    print( '  checkpoint reset', self.comm.rank, flush=True )
-                    print( self.checkpoints, self.comm.rank, flush=True )
-                    for checkpoint in self.checkpoints:
-                        print( '  iterating...', self.comm.rank, flush=True )
-                        checkpoint.write( self.iteration )
-
-                    print( 'checkpoint written', self.comm.rank, flush=True )
-                    
-                #sys.exit(0)
-                #print('this should not print', self.comm.rank, flush=True )
-                return
-            
         # End of the N iterations
         # -----------------------
         
+        # write an exit checkpoint if needed
+        if write_exit_checkpoint:
+            self.write_exit_checkpoint()
+
         # Finalize PIC loop
         # Get the charge density and the current from spectral space.
         fld.spect2interp('J')

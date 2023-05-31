@@ -10,3 +10,4 @@ dist/
 fbpic.egg-info/
 .cache/
 .eggs/
+*.bak
