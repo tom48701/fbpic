@@ -68,7 +68,9 @@ class Cathode(Particles):
     
     def inject_particles( self, time): 
         """ 
-        Inject particles per subdomain. 
+        Called in the main PIC loop at each exchange period.
+        
+        Inject particles into the simulation. 
         """
         # check the time
         if time < self.t_min or time > self.t_max:
@@ -128,6 +130,8 @@ class Cathode(Particles):
     
     def restart_from_checkpoint(self, iteration=None):
         """ 
+        Called when restarting. This must be manually triggered! 
+        
         Set the beam injection state from a checkpoint.
         Choose the latest (highest numbered) checkpoint if none is specified
         """
@@ -371,6 +375,8 @@ class CathodeContinuousInjector:
     
     def communicate_injection_mask(self):
         """ 
+        Called after each injection.
+        
         The injection mask must be shared between procs to ensure that 
         particles are only injected once, perform a reduction and a broadcast
         to accomplish this
@@ -392,8 +398,10 @@ class CathodeContinuousInjector:
     
     def overwrite_beam(self, new_beam):
         """ 
+        Called when restarting the simulation.
+        
         Overwrite the current beam using the contents of a npz file.
-        The injection state is required, the full beam is optional
+        The injection state is required, the full beam is optional.
         """
         self.injection_mask[:] = new_beam['injection_mask'][:]
         # try to overwrite the rest of the beam, silently pass if the data is not present

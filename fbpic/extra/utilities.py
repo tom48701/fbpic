@@ -3,10 +3,11 @@ import numpy as np
 from mpi4py import MPI
 
 
-def remove_old_checkpoints( checkpoint_dir='checkpoints' ):
+def remove_old_checkpoints( checkpoint_dir='checkpoints', skip=[] ):
     """
     Automatically look for and remove all checkpoints within the specified
     directory except for the most recent (highest iteration) for each proc.
+    Optionally pass a list of specific iterations to skip.
     No confirmation is given before deletion!
     """
     rank = MPI.COMM_WORLD.rank
@@ -33,11 +34,11 @@ def remove_old_checkpoints( checkpoint_dir='checkpoints' ):
             latest_file = files[imax]
             
             for f in files:
-                if f != latest_file:
+                if (f != latest_file) or (f not in skip):
                     print(f'removing {checkpoint_dir}/proc{i}/hdf5/{f}')
                     os.remove(f'{checkpoint_dir}/proc{i}/hdf5/{f}')
-                    
-            print(f'leaving {checkpoint_dir}/proc{i}/hdf5/{latest_file}')
+                else:
+                    print(f'leaving {checkpoint_dir}/proc{i}/hdf5/{f}')
 
 
 def find_checkpoint(rank, iteration=np.inf, operation='lt', reduction=max,

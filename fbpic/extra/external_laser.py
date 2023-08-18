@@ -4,7 +4,7 @@ from scipy.constants import m_e, e, c, epsilon_0, pi
 from fbpic.lpa_utils.external_fields import ExternalField
 
 def add_external_laser(sim, a0, w0, ctau, zf, z_offset=0., lambda0=8e-7,
-               theta=0., cep_phase=0., theta_pol=0., n_e=0.,
+               theta=0., cep_phase=0., theta_pol=0., n_e=0., x0=0., y0=0.,
                gamma_boost=None, t_max=math.inf ):
     """
     Add a laser to the simulation made up of external fields. Only the 
@@ -48,10 +48,11 @@ def add_external_laser(sim, a0, w0, ctau, zf, z_offset=0., lambda0=8e-7,
     
     theta: float, optional
         Laser angle of incidence i.e. rotation in the z-x plane (rad.).
+        Cannot be used with `x0` or `y0` != 0.
         Default: 0 
         
     theta_pol: float, optional
-        Laser polarisation angle in the transverse plane (rad.).
+        Laser polarisation angle in the transverse plane (rad.). 
         Default: 0
     
     cep_phase: float, optional
@@ -60,6 +61,10 @@ def add_external_laser(sim, a0, w0, ctau, zf, z_offset=0., lambda0=8e-7,
         
     n_e: float, optional
         Reference plasma density (m^-3) for calculating a refractive index.
+        Default: 0
+    
+    x0, y0: float, optional
+        Laser transverse offset in x/y. Cannot be used with `theta` != 0.
         Default: 0
         
     gamma_boost: float or None, optional
@@ -72,9 +77,15 @@ def add_external_laser(sim, a0, w0, ctau, zf, z_offset=0., lambda0=8e-7,
         Default: inf
         
     """
+    # checks
     if sim.time > t_max:
         print(f't_max exceeded, skipping external laser ({sim.time} > {t_max})')
         return
+    
+    if theta != 0.:
+        assert x0==0. and y0==0., 'Angled incidence cannot be used in conjunction with a transverse offset!'
+    if x0 != 0. or y0 != 0.:
+        assert theta == 0., 'Tranverse offset cannot be used in conjunction with angled incidence!'
     
     k0 = 2*pi/lambda0
     omega0 = 2*pi*c/lambda0
@@ -135,6 +146,9 @@ def add_external_laser(sim, a0, w0, ctau, zf, z_offset=0., lambda0=8e-7,
         # use the precomputed trig functions to save time (probably?)
         z = (zc-zf)*cos + xc*sin
         x = -(zc-zf)*sin + xc*cos
+        # apply the transverse offset if specified
+        x -= x0
+        y -= y0
         # now coordinates are in the proper orientation, proceed as normal
         r2 = x**2 + y**2
         w = w0 * math.sqrt(1 + (z/zR)**2) # spot size

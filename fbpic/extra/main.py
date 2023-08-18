@@ -37,7 +37,14 @@ from fbpic.boundaries import BoundaryCommunicator
 
 # define the signal handler class
 class SignalHandler:
-    def __init__(self, num):
+    def __init__(self):
+        """
+        Class to handle a signal
+        """
+        self.num = None
+        self.signal_recieved = False 
+    
+    def set_signal(self, num):
         """
         Create a flag for a specific signal code
         
@@ -46,7 +53,6 @@ class SignalHandler:
         SIGUSR1 : 10    (unix only)
         """
         self.num = num
-        self.signal_recieved = False 
         signal.signal( num, self._handle )
         
     def _handle(self, *args):
@@ -201,21 +207,14 @@ class Simulation(SimulationParent):
         # Print simulation setup
         print_simulation_setup( self, verbose_level=verbose_level )
 
-
-        # set the trigger signal if none specified
-        if shutdown_signal is None:   
-            # USR1 is cleaner, but doesn't exist on windows. TERM works as well
-            try:
-                sig = signal.SIGUSR1
-            except AttributeError:
-                sig = signal.SIGTERM
-        else:
-            sig = shutdown_signal
-    
-        self.handler = SignalHandler(sig)
+        # create the signal handler and set the trigger signal if specified
+        self.handler = SignalHandler()
+        if shutdown_signal is not None:   
+            self.handler.set_signal(shutdown_signal)
         
     def write_exit_checkpoint(self):
-        # create a copy of the user-created checkpoints first
+        """ Immediately write a checkpoint """
+        # create a copy of any pre-existing checkpoints first
         user_checkpoints = self.checkpoints[:]
         # clear the checkpoint list
         self.checkpoints = []
@@ -227,6 +226,7 @@ class Simulation(SimulationParent):
         self.checkpoints = user_checkpoints[:]
         
     def shutdown(self):
+        """ shut down the simulation """
         if self.comm.rank == 0:
             print('Shutting down.')
         sys.exit(0)
