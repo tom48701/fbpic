@@ -20,8 +20,9 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
 
     def __init__(self, period=None, species={}, comm=None,
         name=None, phase_space=[], bins=[], edges=None, custom_quantities=[],
-        move_with_window=True, deposit='w', select=None, write_dir=None, 
-        iteration_min=0, iteration_max=np.inf, dt_period=None, sim=None ) :
+        move_with_window=True, deposit='w', unweighted=False, select=None, 
+        write_dir=None, iteration_min=0, iteration_max=np.inf, dt_period=None, 
+        sim=None ) :
         """
         Initialize a phase space diagnostic.
 
@@ -87,7 +88,10 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
         deposit: string, optional
             Specify a particle quantity to deposit in the bins. 
             The particle weight is always deposited.
-                    
+        
+        unweighted: bool, optional
+            Set all particle weights to unity. Default: False
+            
         select : dict, optional
             Either None or a dictionary of rules to select the particles, of 
             the form
@@ -143,6 +147,7 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
         self.bins = bins
         self.edges = edges
         self.deposit = deposit
+        self.unweighted = unweighted
         self.move_with_window = move_with_window
         self.custom_quantities = custom_quantities
         self.sim = sim
@@ -503,8 +508,13 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
                     bin_edges.append(self.edges[i])
 
         # Get the particle weights
+        
         weights = self.get_dataset( species, 'w', select_array,
                                            n_rank, Ntot )
+        
+        # set uniform weights if instructed
+        if self.unweighted:
+            weights = np.ones_like(weights)
         
         # deposit a specified quantity alongside the weights
         if self.deposit != 'w':

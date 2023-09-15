@@ -211,7 +211,7 @@ class ParticleTrackingDiagnostic:
         
     def write_data(self, root=0):
         """ Collect data on root, extend file datasets, and append the buffers """
-        print('writing')
+        #print('writing')
         # expand the time buffer on the root and update the weights
         weights = self.gather_weights(root=root)
         if self.comm.rank == root:
