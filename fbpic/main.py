@@ -492,7 +492,7 @@ class Simulation(object):
                     species.push_x( 0.5*dt )
             # Get positions/velocities for antenna particles at t = (n+1/2) dt
             for antenna in self.laser_antennas:
-                antenna.update_v( self.time + 0.5*dt )
+                antenna.update_v( self.time + 0.5*dt, dt )
                 antenna.push_x( 0.5*dt )
             # Shift the boundaries of the grid for the Galilean frame
             if self.use_galilean:
@@ -616,9 +616,10 @@ class Simulation(object):
         """
         # Shortcut
         fld = self.fld
-        # If no species_list is provided, all species and antennas deposit
+        # If no species_list is provided, all non-zero-current species
+        # and antennas deposit
         if species_list is None:
-            species_list = self.ptcl
+            species_list = [species for species in self.ptcl if not species.is_tracer]
             antennas_list = self.laser_antennas
         else:
             # Otherwise only the specified species deposit
@@ -797,7 +798,8 @@ class Simulation(object):
                             uz_m=0., ux_m=0., uy_m=0.,
                             uz_th=0., ux_th=0., uy_th=0.,
                             continuous_injection=True,
-                            boost_positions_in_dens_func=False ):
+                            boost_positions_in_dens_func=False,
+                            is_tracer=False):
         """
         Create a new species (i.e. an instance of `Particles`) with
         charge `q` and mass `m`. Add it to the simulation (i.e. to the list
@@ -882,6 +884,12 @@ class Simulation(object):
            For boosted-frame simulations: whether to automatically take into
            account the Lorentz transformation of the positions, in `dens_func`
 
+        is_tracer: bool, optional
+            Setting this flag to True will allow this particle
+            to move as a normal particle with given mass and charge,
+            but will generate no current. This allows them to be passive
+            tracers inside the plasma.
+
         Returns
         -------
         new_species: an instance of the `Particles` class
@@ -938,11 +946,9 @@ class Simulation(object):
                     coef = self.boost.gamma0*(1 - beta_m_lab*self.boost.beta0)
                     args = _check_dens_func_arguments( dens_func )
                     if args == ['z', 'r']:
-                        def new_dens_func( z, r ):
-                            return dens_func( coef*z, r )
+                        new_dens_func = lambda z, r: dens_func( coef*z, r )
                     elif args == ['x', 'y', 'z']:
-                        def new_dens_func( x, y, z ):
-                            return dens_func( x, y, coef*z )
+                        new_dens_func = lambda x, y, z: dens_func( x, y, coef*z )
 
             # Modify input particle bounds, in order to only initialize the
             # particles in the local sub-domain
@@ -990,7 +996,7 @@ class Simulation(object):
                         ux_m=ux_m, uy_m=uy_m, uz_m=uz_m,
                         ux_th=ux_th, uy_th=uy_th, uz_th=uz_th,
                         continuous_injection=continuous_injection,
-                        dz_particles=dz_particles )
+                        dz_particles=dz_particles, is_tracer=is_tracer )
 
         # Add it to the list of species and return it to the user
         self.ptcl.append( new_species )

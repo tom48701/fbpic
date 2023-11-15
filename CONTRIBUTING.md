@@ -15,15 +15,6 @@ git clone git@github.com:<YourUserLogin>/fbpic.git
 
 ### Implementing a new feature and adding it to the main repository
 
-- Switch to the development branch
-```
-git checkout dev
-```
-and install it
-```
-python setup.py install
-```
-
 - Start a new branch from the development branch, in order to
 implement a new feature. (Choose a branch name that is representative of the
 feature that you are implementing, e.g. `add-quadratic-deposition` or
@@ -56,7 +47,7 @@ git pull git@github.com:fbpic/fbpic.git dev
   ```
   python setup.py install
   pip install matplotlib openPMD-viewer
-  python setup.py test
+  python -m pytest tests --ignore=tests/unautomated
   ```
   (Be patient: the tests can take approx. 5 min.)
 
