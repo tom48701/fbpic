@@ -1,9 +1,47 @@
 import warnings, h5py
 import numpy as np
 
+def get_random_tags(species, sim, Ntrack):
+    """
+    Get `Ntrack` random tags from the target species.
+    """
+    # communicator
+    comm = sim.comm
+    
+    # get the local tags
+    local_tags = species.tracker.id
+    
+    # gather all tags
+    if comm.size > 1:
+        n = local_tags.size
+        n_rank = comm.mpi_comm.allgather(n)
+        Ntot = sum(n_rank)
+        Ntrack = min(Ntrack, Ntot)
+
+        all_tags = comm.gather_ptcl_array( local_tags, n_rank, Ntot, root=0 )
+    
+        # choose tags, limit size if > Ntot
+        if comm.rank == 0:
+            assert all_tags.size == Ntot 
+            tags_to_track = np.random.choice( all_tags, Ntrack, replace=False ).astype(int)  
+        else:
+            tags_to_track = np.empty(Ntrack, dtype=int)
+        
+        # broadcast the tags to track
+        comm.mpi_comm.Bcast( tags_to_track, root=0)
+
+    else:
+        all_tags = local_tags 
+        Ntrack = min(Ntrack, all_tags.size)
+        tags_to_track = np.random.choice( all_tags, Ntrack, replace=False )  
+    
+    tags_to_track.sort()
+    return tags_to_track
+    
 class ParticleTrackingDiagnostic:
     def __init__(self, sim, species, name, tags, diag_period, 
-                 stride=1, track=['','u']):
+                 stride=1, track=['','u'],
+                 filename=None, write_dir=None):
         """
         Define a particle tracking diagnostic. !! One species per diagnostic !!
         
@@ -37,6 +75,12 @@ class ParticleTrackingDiagnostic:
               'E' : Electric field
               'B' : Magnetic field
             Default: ['', 'u']
+        
+        filename: str, optional
+            Name of the file
+            
+        write_dir: str, optional
+            Where to write the file.
         
         """
         # check tags present
@@ -72,7 +116,15 @@ class ParticleTrackingDiagnostic:
         self.tbuffer = np.full(self.repeating_buffer_size, np.nan)
         self.buffer = self.create_buffer()
         # set up the file path
-        self.filepath = 'tracking_%s.h5'%name
+        if write_dir is None:
+            self.write_dir = '.'
+        else:
+            self.write_dir = write_dir
+        if filename is None:
+            self.filename = 'tracking_%s.h5'%name
+        else:
+            self.filename = filename
+        self.filepath = '%s/%s'%(self.write_dir, self.filename)
         # make the empty file on the first proc
         if self.comm.rank == 0:
             with h5py.File(self.filepath, 'w') as f:
@@ -164,25 +216,29 @@ class ParticleTrackingDiagnostic:
         """ gather weights """
         # the local partial list of weights
         local = self.buffer['w']
-        # define the global list to be reduced
-        glob = np.empty((self.comm.size, self.Ntracks))
-        # gather...
-        self.comm.mpi_comm.Gather( local, glob, root=root )
-        # perform the subsequent reduction only on the root
-        if self.comm.rank == root:
-            # create the nan mask 
-            nans = np.isnan(glob) 
-            nans = ~((~nans).any(axis=0))
-            # remove nans and reduce the global array to the correct shape
-            glob = np.nan_to_num( glob )
-            glob = glob.sum(axis=0)
-            # remove any suprious axes
-            glob = np.squeeze(glob)
-            # re-insert the nan values
-            glob[nans] = np.nan
-            return glob
+        # gather from all procs in multi-proc mode
+        if self.comm.size > 1:   
+            # define the global list to be reduced
+            glob = np.empty((self.comm.size, self.Ntracks))
+            # gather...
+            self.comm.mpi_comm.Gather( local, glob, root=root )
+            # perform the subsequent reduction only on the root
+            if self.comm.rank == root:
+                # create the nan mask 
+                nans = np.isnan(glob) 
+                nans = ~((~nans).any(axis=0))
+                # remove nans and reduce the global array to the correct shape
+                glob = np.nan_to_num( glob )
+                glob = glob.sum(axis=0)
+                # remove any suprious axes
+                glob = np.squeeze(glob)
+                # re-insert the nan values
+                glob[nans] = np.nan
+                return glob
+            else:
+                return None
         else:
-            return None
+            return local
         
         
     def gather_quant(self, quant, n=3, root=0):
@@ -191,23 +247,27 @@ class ParticleTrackingDiagnostic:
         glob = np.empty((self.comm.size, n, self.Ntracks, self.repeating_buffer_size))
         # define the local copy of the quantity
         local = self.buffer[quant]
-        # gather the local buffers into the global array on the root
-        self.comm.mpi_comm.Gather( local, glob, root=root )
-        # perform the subsequent reduction only on the root
-        if self.comm.rank == root:
-            # create the nan mask 
-            nans = np.isnan(glob) 
-            nans = ~((~nans).any(axis=0))
-            # remove nans and reduce the global array to the correct shape
-            glob = np.nan_to_num( glob )
-            glob = glob.sum(axis=0)
-            # remove any suprious axes
-            glob = np.squeeze(glob)
-            # re-insert the nan values
-            glob[nans] = np.nan
-            return glob
+        # gather from all procs in multi-proc mode
+        if self.comm.size > 1:
+            # gather the local buffers into the global array on the root
+            self.comm.mpi_comm.Gather( local, glob, root=root )
+            # perform the subsequent reduction only on the root
+            if self.comm.rank == root:
+                # create the nan mask 
+                nans = np.isnan(glob) 
+                nans = ~((~nans).any(axis=0))
+                # remove nans and reduce the global array to the correct shape
+                glob = np.nan_to_num( glob )
+                glob = glob.sum(axis=0)
+                # remove any suprious axes
+                glob = np.squeeze(glob)
+                # re-insert the nan values
+                glob[nans] = np.nan
+                return glob
+            else:
+                return None
         else:
-            return None
+            return local
         
     def write_data(self, root=0):
         """ Collect data on root, extend file datasets, and append the buffers """
