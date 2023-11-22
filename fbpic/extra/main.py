@@ -75,7 +75,7 @@ class Simulation(SimulationParent):
                  particle_shape='linear', verbose_level=1,
                  smoother=None, use_ruyten_shapes=True,
                  use_modified_volume=True, 
-                 t0=0., i0=0, shutdown_signal=None, 
+                 t0=0., i0=0, shutdown_signal=15, 
                  custom_domain_decomposition=None):
         """
         New Parameters
@@ -88,7 +88,7 @@ class Simulation(SimulationParent):
             
         shutdown_signal: int or signal, optional
             The signal used to trigger early shutdown. 
-            Defaults to SIGUSR1 on Unix and SIGTERM on Windows.
+            Defaults to SIGUSR1 (15)
         """
         # Check whether to use CUDA
         self.use_cuda = use_cuda
@@ -225,12 +225,6 @@ class Simulation(SimulationParent):
         # swap the user checkpoints back in
         self.checkpoints = user_checkpoints[:]
         
-    def shutdown(self):
-        """ shut down the simulation """
-        if self.comm.rank == 0:
-            print('Shutting down.')
-        sys.exit(0)
-        
     # modified step method
     def step(self, N=1, correct_currents=True,
              correct_divE=False, use_true_rho=False,
@@ -312,164 +306,156 @@ class Simulation(SimulationParent):
 
         # Loop over timesteps
         for i_step in range(N):
-
-            if self.handler.signal_recieved: # gracefully close down upon recieving the signal
-                
-                # Print the measured time taken by the PIC cycle
-                if show_progress and (self.comm.rank==0):
-                    progress_bar.print_summary()
-
-                if write_exit_checkpoint:
-                    self.write_exit_checkpoint()
-                    
-                self.shutdown()
             
-            else: # normal loop
-                # Show a progression bar and calculate ETA
-                if show_progress and self.comm.rank==0:
-                    progress_bar.time( i_step )
-                    progress_bar.print_progress()
-    
-                # Particle exchanges to prepare for this iteration
-                # ------------------------------------------------
-    
-                # Check whether this iteration involves particle exchange.
-                # Note: Particle exchange is imposed at the first iteration
-                # of this loop (i_step == 0) in order to ensure that all
-                # particles are inside the box, and that 'rho_prev' is correct
-                if self.iteration % self.comm.exchange_period == 0 or i_step == 0:
-                    # Particle exchange includes MPI exchange of particles, removal
-                    # of out-of-box particles and (if there is a moving window)
-                    # continuous injection of new particles by the moving window.
-                    # (In the case of single-proc periodic simulations, particles
-                    # are shifted by one box length, so they remain inside the box)
-                    for species in self.ptcl:
-                        if hasattr(species, '_is_cathode'): 
-                            species.inject_particles(self.time) 
-                        self.comm.exchange_particles(species, fld, self.time)
-                    for antenna in self.laser_antennas:
-                        antenna.update_current_rank(self.comm)
-    
-                    # Reproject the charge on the interpolation grid
-                    # (Since particles have been removed / added to the simulation;
-                    # otherwise rho_prev is obtained from the previous iteration.)
-                    self.deposit('rho_prev', exchange=(use_true_rho is True))
-    
-                    # For simulations on GPU, clear the memory pool used by cupy.
-                    if self.use_cuda:
-                        mempool = cupy.get_default_memory_pool()
-                        mempool.free_all_blocks()
-    
-                # For the field diagnostics of the first step: deposit J
-                # (Note however that this is not the *corrected* current)
-                if i_step == 0:
-                    self.deposit('J', exchange=True)
-    
-                # Main PIC iteration
-                # ------------------
-    
-                # Keep field arrays sorted throughout gathering+push
-                for species in ptcl:
-                    species.keep_fields_sorted = True
-    
-                # Gather the fields from the grid at t = n dt
-                for species in ptcl:
-                    species.gather( fld.interp, self.comm )
-                # Apply the external fields at t = n dt
-                for ext_field in self.external_fields:
-                    ext_field.apply_expression( self.ptcl, self.time )
-    
-                # Run the diagnostics
-                # (after gathering ; allows output of gathered fields on particles)
-                # (E, B, rho, x are defined at time n ; J, p at time n-1/2)
-                for diag in self.diags:
-                    # Check if the diagnostic should be written at this iteration
-                    # (If needed: bring rho/J from spectral space, where they
-                    # were smoothed/corrected, and copy the data from the GPU.)
-                    diag.write( self.iteration )
-    
-                # Push the particles' positions and velocities to t = (n+1/2) dt
-                if move_momenta:
-                    for species in ptcl:
-                        species.push_p( self.time + 0.5*self.dt )
-                if move_positions:
-                    for species in ptcl:
-                        species.push_x( 0.5*dt )
-                # Get positions/velocities for antenna particles at t = (n+1/2) dt
+            # break the loop upon recipt of the signal
+            if self.handler.signal_recieved: 
+                break
+
+            # Show a progression bar and calculate ETA
+            if show_progress and self.comm.rank==0:
+                progress_bar.time( i_step )
+                progress_bar.print_progress()
+
+            # Particle exchanges to prepare for this iteration
+            # ------------------------------------------------
+
+            # Check whether this iteration involves particle exchange.
+            # Note: Particle exchange is imposed at the first iteration
+            # of this loop (i_step == 0) in order to ensure that all
+            # particles are inside the box, and that 'rho_prev' is correct
+            if self.iteration % self.comm.exchange_period == 0 or i_step == 0:
+                # Particle exchange includes MPI exchange of particles, removal
+                # of out-of-box particles and (if there is a moving window)
+                # continuous injection of new particles by the moving window.
+                # (In the case of single-proc periodic simulations, particles
+                # are shifted by one box length, so they remain inside the box)
+                for species in self.ptcl:
+                    if hasattr(species, '_is_cathode'): 
+                        species.inject_particles(self.time) 
+                    self.comm.exchange_particles(species, fld, self.time)
                 for antenna in self.laser_antennas:
-                    antenna.update_v( self.time + 0.5*dt )
-                    antenna.push_x( 0.5*dt )
-                # Shift the boundaries of the grid for the Galilean frame
-                if self.use_galilean:
-                    self.shift_galilean_boundaries( 0.5*dt )
-    
-                # Handle elementary processes at t = (n + 1/2)dt
-                # i.e. when the particles' velocity and position are synchronized
-                # (e.g. ionization, Compton scattering, ...)
+                    antenna.update_current_rank(self.comm)
+
+                # Reproject the charge on the interpolation grid
+                # (Since particles have been removed / added to the simulation;
+                # otherwise rho_prev is obtained from the previous iteration.)
+                self.deposit('rho_prev', exchange=(use_true_rho is True))
+
+                # For simulations on GPU, clear the memory pool used by cupy.
+                if self.use_cuda:
+                    mempool = cupy.get_default_memory_pool()
+                    mempool.free_all_blocks()
+
+            # For the field diagnostics of the first step: deposit J
+            # (Note however that this is not the *corrected* current)
+            if i_step == 0:
+                self.deposit('J', exchange=True)
+
+            # Main PIC iteration
+            # ------------------
+
+            # Keep field arrays sorted throughout gathering+push
+            for species in ptcl:
+                species.keep_fields_sorted = True
+
+            # Gather the fields from the grid at t = n dt
+            for species in ptcl:
+                species.gather( fld.interp, self.comm )
+            # Apply the external fields at t = n dt
+            for ext_field in self.external_fields:
+                ext_field.apply_expression( self.ptcl, self.time )
+
+            # Run the diagnostics
+            # (after gathering ; allows output of gathered fields on particles)
+            # (E, B, rho, x are defined at time n ; J, p at time n-1/2)
+            for diag in self.diags:
+                # Check if the diagnostic should be written at this iteration
+                # (If needed: bring rho/J from spectral space, where they
+                # were smoothed/corrected, and copy the data from the GPU.)
+                diag.write( self.iteration )
+
+            # Push the particles' positions and velocities to t = (n+1/2) dt
+            if move_momenta:
                 for species in ptcl:
-                    species.handle_elementary_processes( self.time + 0.5*dt )
-    
-                # Fields are not used beyond this point ; no need to keep sorted
+                    species.push_p( self.time + 0.5*self.dt )
+            if move_positions:
                 for species in ptcl:
-                    species.keep_fields_sorted = False
-    
-                # Get the current at t = (n+1/2) dt
-                # (Guard cell exchange done either now or after current correction)
-                self.deposit('J', exchange=(correct_currents is False))
-                # Perform cross-deposition if needed
-                if correct_currents and fld.current_correction=='cross-deposition':
-                    self.cross_deposit( move_positions )
-    
-                # Push the particles' positions to t = (n+1) dt
-                if move_positions:
-                    for species in ptcl:
-                        species.push_x( 0.5*dt )
-                # Get positions for antenna particles at t = (n+1) dt
-                for antenna in self.laser_antennas:
-                    antenna.push_x( 0.5*dt )
-                # Shift the boundaries of the grid for the Galilean frame
-                if self.use_galilean:
-                    self.shift_galilean_boundaries( 0.5*dt )
-    
-                # Get the charge density at t = (n+1) dt
-                self.deposit('rho_next', exchange=(use_true_rho is True))
-                # Correct the currents (requires rho at t = (n+1) dt )
-                if correct_currents:
-                    fld.correct_currents( check_exchanges=(self.comm.size > 1) )
-                    if self.comm.size > 1:
-                        # Exchange the guard cells of corrected J between domains
-                        # (If correct_currents is False, the exchange of J
-                        # is done in the function `deposit`)
-                        fld.spect2partial_interp('J')
-                        self.comm.exchange_fields(fld.interp, 'J', 'add')
-                        fld.partial_interp2spect('J')
-                    fld.exchanged_source['J'] = True
-    
-                # Push the fields E and B on the spectral grid to t = (n+1) dt
-                fld.push( use_true_rho, check_exchanges=(self.comm.size > 1) )
-                if correct_divE:
-                    fld.correct_divE()
-                # Move the grids if needed
-                if self.comm.moving_win is not None:
-                    # Shift the fields is spectral space and update positions of
-                    # the interpolation grids
-                    self.comm.move_grids(fld, ptcl, dt, self.time)
-    
-                # Handle boundaries for the E and B fields:
-                # - MPI exchanges for guard cells
-                # - Damp fields in damping cells
-                # - Set fields to 0 at the position of the mirrors
-                # - Update the fields in interpolation space
-                #  (needed for the field gathering at the next iteration)
-                self.exchange_and_damp_EB()
-    
-                # Increment the global time and iteration
-                self.time += dt
-                self.iteration += 1
-    
-                # Write the checkpoints if needed
-                for checkpoint in self.checkpoints:
-                    checkpoint.write( self.iteration )
+                    species.push_x( 0.5*dt )
+            # Get positions/velocities for antenna particles at t = (n+1/2) dt
+            for antenna in self.laser_antennas:
+                antenna.update_v( self.time + 0.5*dt )
+                antenna.push_x( 0.5*dt )
+            # Shift the boundaries of the grid for the Galilean frame
+            if self.use_galilean:
+                self.shift_galilean_boundaries( 0.5*dt )
+
+            # Handle elementary processes at t = (n + 1/2)dt
+            # i.e. when the particles' velocity and position are synchronized
+            # (e.g. ionization, Compton scattering, ...)
+            for species in ptcl:
+                species.handle_elementary_processes( self.time + 0.5*dt )
+
+            # Fields are not used beyond this point ; no need to keep sorted
+            for species in ptcl:
+                species.keep_fields_sorted = False
+
+            # Get the current at t = (n+1/2) dt
+            # (Guard cell exchange done either now or after current correction)
+            self.deposit('J', exchange=(correct_currents is False))
+            # Perform cross-deposition if needed
+            if correct_currents and fld.current_correction=='cross-deposition':
+                self.cross_deposit( move_positions )
+
+            # Push the particles' positions to t = (n+1) dt
+            if move_positions:
+                for species in ptcl:
+                    species.push_x( 0.5*dt )
+            # Get positions for antenna particles at t = (n+1) dt
+            for antenna in self.laser_antennas:
+                antenna.push_x( 0.5*dt )
+            # Shift the boundaries of the grid for the Galilean frame
+            if self.use_galilean:
+                self.shift_galilean_boundaries( 0.5*dt )
+
+            # Get the charge density at t = (n+1) dt
+            self.deposit('rho_next', exchange=(use_true_rho is True))
+            # Correct the currents (requires rho at t = (n+1) dt )
+            if correct_currents:
+                fld.correct_currents( check_exchanges=(self.comm.size > 1) )
+                if self.comm.size > 1:
+                    # Exchange the guard cells of corrected J between domains
+                    # (If correct_currents is False, the exchange of J
+                    # is done in the function `deposit`)
+                    fld.spect2partial_interp('J')
+                    self.comm.exchange_fields(fld.interp, 'J', 'add')
+                    fld.partial_interp2spect('J')
+                fld.exchanged_source['J'] = True
+
+            # Push the fields E and B on the spectral grid to t = (n+1) dt
+            fld.push( use_true_rho, check_exchanges=(self.comm.size > 1) )
+            if correct_divE:
+                fld.correct_divE()
+            # Move the grids if needed
+            if self.comm.moving_win is not None:
+                # Shift the fields is spectral space and update positions of
+                # the interpolation grids
+                self.comm.move_grids(fld, ptcl, dt, self.time)
+
+            # Handle boundaries for the E and B fields:
+            # - MPI exchanges for guard cells
+            # - Damp fields in damping cells
+            # - Set fields to 0 at the position of the mirrors
+            # - Update the fields in interpolation space
+            #  (needed for the field gathering at the next iteration)
+            self.exchange_and_damp_EB()
+
+            # Increment the global time and iteration
+            self.time += dt
+            self.iteration += 1
+
+            # Write the checkpoints if needed
+            for checkpoint in self.checkpoints:
+                checkpoint.write( self.iteration )
             
         # End of the N iterations
         # -----------------------

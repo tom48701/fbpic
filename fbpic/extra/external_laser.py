@@ -5,7 +5,7 @@ from fbpic.lpa_utils.external_fields import ExternalField
 
 def add_external_laser(sim, a0, w0, ctau, zf, z_offset=0., lambda0=8e-7,
                theta=0., cep_phase=0., theta_pol=0., n_e=0., x0=0., y0=0.,
-               gamma_boost=None, t_max=math.inf ):
+               gamma_boost=None, t_max=math.inf, species=None ):
     """
     Add a laser to the simulation made up of external fields. Only the 
     transverse E and B fields are initialised. The laser is modelled as a 
@@ -75,18 +75,25 @@ def add_external_laser(sim, a0, w0, ctau, zf, z_offset=0., lambda0=8e-7,
         Time limit for initialising the laser. Convenience option to simplify 
         restarts.
         Default: inf
-        
+    
+    species: list of Particles or None
+        List of species to apply the laser fields to. 
+        Default: all particles
     """
     # checks
     if sim.time > t_max:
         print(f't_max exceeded, skipping external laser ({sim.time} > {t_max})')
         return
     
+    assert species is None or isinstance(species, (list, tuple)), 'Species must be either None or a list/tuple of Particles objects!'
+    if species is None:
+        species = [None]
+        
     if theta != 0.:
         assert x0==0. and y0==0., 'Angled incidence cannot be used in conjunction with a transverse offset!'
     if x0 != 0. or y0 != 0.:
         assert theta == 0., 'Tranverse offset cannot be used in conjunction with angled incidence!'
-    
+
     k0 = 2*pi/lambda0
     omega0 = 2*pi*c/lambda0
     n_c = omega0**2*m_e*epsilon_0/e**2
@@ -163,22 +170,29 @@ def add_external_laser(sim, a0, w0, ctau, zf, z_offset=0., lambda0=8e-7,
         return( F + amplitude * w0/w * envelope * phase )
 
     # check component amplitudes to initialise the minimum number of external fields 
-    if Ex != 0.:
-        sim.external_fields.append(ExternalField( laser_field, 'Ex', Ex, 0., 
-                                                  gamma_boost=gamma_boost ))
-    if Ey != 0.:
-        sim.external_fields.append(ExternalField( laser_field, 'Ey', Ey, 0., 
-                                                  gamma_boost=gamma_boost ))
-    if Ez != 0.:
-        sim.external_fields.append(ExternalField( laser_field, 'Ez', Ez, 0., 
-                                                  gamma_boost=gamma_boost ))
-    if Bx != 0.:
-        sim.external_fields.append(ExternalField( laser_field, 'Bx', Bx, 0., 
-                                                  gamma_boost=gamma_boost ))
-    if By != 0.:
-        sim.external_fields.append(ExternalField( laser_field, 'By', By, 0., 
-                                                  gamma_boost=gamma_boost ))
-    if Bz != 0.:
-        sim.external_fields.append(ExternalField( laser_field, 'Bz', Bz, 0., 
-                                                  gamma_boost=gamma_boost ))
+    for spec in species:
+        if Ex != 0.:
+            sim.external_fields.append(ExternalField( laser_field, 'Ex', Ex, 0., 
+                                                      gamma_boost=gamma_boost,
+                                                      species=spec))
+        if Ey != 0.:
+            sim.external_fields.append(ExternalField( laser_field, 'Ey', Ey, 0., 
+                                                      gamma_boost=gamma_boost,
+                                                      species=spec))
+        if Ez != 0.:
+            sim.external_fields.append(ExternalField( laser_field, 'Ez', Ez, 0., 
+                                                      gamma_boost=gamma_boost,
+                                                      species=spec))
+        if Bx != 0.:
+            sim.external_fields.append(ExternalField( laser_field, 'Bx', Bx, 0., 
+                                                      gamma_boost=gamma_boost,
+                                                      species=spec))
+        if By != 0.:
+            sim.external_fields.append(ExternalField( laser_field, 'By', By, 0., 
+                                                      gamma_boost=gamma_boost,
+                                                      species=spec))
+        if Bz != 0.:
+            sim.external_fields.append(ExternalField( laser_field, 'Bz', Bz, 0., 
+                                                      gamma_boost=gamma_boost,
+                                                      species=spec))
     return 
