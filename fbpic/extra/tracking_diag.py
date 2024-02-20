@@ -154,11 +154,13 @@ class ParticleTrackingDiagnostic:
             buffer[quant] = np.full((3,self.Ntracks, self.repeating_buffer_size), np.nan)
         return buffer
     
-    def write(self, iteration ):
+    def write(self, iteration):
         """
         This method is called during the main PIC loop
         """
-        if iteration % self.diag_period == 0 and iteration > self.istart:
+        if iteration < self.istart:
+            return
+        if iteration % self.diag_period == 0:
             self.write_data()
         if iteration % self.stride == 0:
             self.gather_data()
