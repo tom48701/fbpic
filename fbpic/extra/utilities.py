@@ -32,9 +32,10 @@ def remove_old_checkpoints( checkpoint_dir='checkpoints', skip=[] ):
             points = [int(f[4:-3]) for f in files]
             imax = np.argmax(points)
             latest_file = files[imax]
+            print(f'latest file in proc{i} is {latest_file}')
             
             for f in files:
-                if (f != latest_file) or (f not in skip):
+                if (f != latest_file) and (f not in skip):
                     print(f'removing {checkpoint_dir}/proc{i}/hdf5/{f}')
                     os.remove(f'{checkpoint_dir}/proc{i}/hdf5/{f}')
                 else:

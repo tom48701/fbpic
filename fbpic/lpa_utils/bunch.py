@@ -130,7 +130,7 @@ def add_particle_bunch_gaussian(sim, q, m, sig_r, sig_z, n_emit, gamma0,
                                 n_macroparticles, tf=0., zf=0., boost=None,
                                 save_beam=None, z_injection_plane=None,
                                 initialize_self_field=True,
-                                symmetrize=False):
+                                symmetrize=False, direction='forward'):
     """
     Introduce a relativistic Gaussian particle bunch in the simulation,
     along with its space charge field.
@@ -255,8 +255,15 @@ def add_particle_bunch_gaussian(sim, q, m, sig_r, sig_z, n_emit, gamma0,
         uz_sqr = uz_sqr[mask]
     # Calculate longitudinal momentum of the bunch
     uz = np.sqrt(uz_sqr)
+    # set propagation direction
+    if direction == 'forward':
+        pass
+    elif direction == 'backward':
+        uz *= -1.
+    else:
+        raise ValueError('`direction` must be "forward" or "backward"')
+    
     # Get weight of each particle
-
     w = n_physical_particles / N_new * np.ones_like(x)
     # Propagate distribution to an out-of-focus position tf.
     # (without taking space charge effects into account)
@@ -282,7 +289,8 @@ def add_particle_bunch_gaussian(sim, q, m, sig_r, sig_z, n_emit, gamma0,
     # Add the electrons to the simulation
     ptcl_bunch = add_particle_bunch_from_arrays(sim, q, m, x, y, z, ux, uy, uz,
                     w, boost=boost, z_injection_plane=z_injection_plane,
-                    initialize_self_field=initialize_self_field)
+                    initialize_self_field=initialize_self_field, 
+                    direction=direction)
     return ptcl_bunch
 
 

@@ -11,3 +11,5 @@ fbpic.egg-info/
 .cache/
 .eggs/
 *.bak
+*.stats
+*.old
