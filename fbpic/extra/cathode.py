@@ -86,6 +86,9 @@ class Cathode(Particles):
             
             mask = r < self.rmax
             Ntot = mask.sum()
+        
+        if Ntot > 0:
+            print( f'{self.sim.comm.rank}: {Ntot}')
             
             x = x[mask]
             y = y[mask]
@@ -95,9 +98,7 @@ class Cathode(Particles):
             uz = uz[mask]
             inv_gamma = inv_gamma[mask]
             w = w[mask]   
-
-        if Ntot > 0:
-            print( f'{self.sim.comm.rank}: {Ntot}')
+            
             # get the existing number of particles
             old_Ntot = self.Ntot
             # expand the particle arrays to accomodate new particles
@@ -124,9 +125,10 @@ class Cathode(Particles):
             if self.use_cuda:
                 self.sorted = False
                 self.send_particles_to_gpu()
-        # add the self fields if required
-        if self.initialize_self_field:
-            self.add_self_field( x,y,z,ux,uy,uz,w,inv_gamma )
+                
+            # add the self fields if required
+            if self.initialize_self_field:
+                self.add_self_field( x,y,z,ux,uy,uz,w,inv_gamma )
     
     def restart_from_checkpoint(self, iteration=None):
         """ 
