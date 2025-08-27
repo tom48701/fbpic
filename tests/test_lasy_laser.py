@@ -135,9 +135,10 @@ def run_and_check_laser_emission(gamma_b, data_dir, lasy_geometry):
     # Create a Laguerre Gaussian laser in RZ geometry using lasy
     pol = (1, 0)
     profile = CombinedLongitudinalTransverseProfile(
-        wavelength, pol, laser_energy,
+        wavelength, pol,
         GaussianLongitudinalProfile(wavelength, tau, t_peak=0),
-        LaguerreGaussianTransverseProfile(w0, p=0, m=1),
+        LaguerreGaussianTransverseProfile(w0, p=0, m=1, wavelength=wavelength),
+        laser_energy,
     )
     if lasy_geometry == "rt":
         lo = (0e-6, -3*tau)
@@ -150,7 +151,7 @@ def run_and_check_laser_emission(gamma_b, data_dir, lasy_geometry):
         npoints = (200,200,200)
         laser = Laser(lasy_geometry, lo, hi, npoints, profile)
     laser.propagate(-3 * c * tau)
-    laser.write_to_file("laguerrelaserRZ")
+    laser.write_to_file("laguerrelaserRZ", write_dir='lasy_data')
 
     # Create an FBPIC simulation that reads this lasy file
     # Initialize the simulation object
@@ -172,7 +173,7 @@ def run_and_check_laser_emission(gamma_b, data_dir, lasy_geometry):
     sim.set_moving_window(v=c)
 
     # Add the laser
-    laser_profile = FromLasyFileLaser( 'laguerrelaserRZ_00000.h5' )
+    laser_profile = FromLasyFileLaser( 'lasy_data/laguerrelaserRZ_00000.h5' )
     add_laser_pulse(sim, laser_profile, method='antenna',
                     z0_antenna=0, gamma_boost=gamma_b)
 
@@ -197,7 +198,7 @@ def run_and_check_laser_emission(gamma_b, data_dir, lasy_geometry):
 
     # Remove openPMD and lasy files
     shutil.rmtree(data_dir)
-    os.remove('laguerrelaserRZ_00000.h5')
+    shutil.rmtree('lasy_data') # This folder is created by lasy
     os.chdir('../')
 
 def test_laser_emission_labframe():

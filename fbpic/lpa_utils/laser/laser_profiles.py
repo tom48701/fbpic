@@ -182,7 +182,7 @@ class GaussianLaser( LaserProfile ):
     def __init__( self, a0, waist, tau, z0, zf=None, theta_pol=0.,
                     lambda0=0.8e-6, cep_phase=0., phi2_chirp=0.,
                     propagation_direction=1 ):
-        """
+        r"""
         Define a linearly-polarized Gaussian laser profile.
 
         More precisely, the electric field **near the focal plane**
@@ -299,7 +299,7 @@ class LaguerreGaussLaser( LaserProfile ):
     def __init__( self, p, m, a0, waist, tau, z0, zf=None, theta_pol=0.,
                     lambda0=0.8e-6, cep_phase=0., theta0=0.,
                     propagation_direction=1 ):
-        """
+        r"""
         Define a linearly-polarized Laguerre-Gauss laser profile.
 
         Unlike the :any:`DonutLikeLaguerreGaussLaser` profile, this
@@ -450,7 +450,7 @@ class DonutLikeLaguerreGaussLaser( LaserProfile ):
 
     def __init__( self, p, m, a0, waist, tau, z0, zf=None, theta_pol=0.,
                     lambda0=0.8e-6, cep_phase=0., propagation_direction=1 ):
-        """
+        r"""
         Define a linearly-polarized donut-like Laguerre-Gauss laser profile.
 
         Unlike the :any:`LaguerreGaussLaser` profile, this
@@ -589,7 +589,7 @@ class FlattenedGaussianLaser( LaserProfile ):
 
     def __init__( self, a0, w0, tau, z0, N=6, zf=None, theta_pol=0.,
                     lambda0=0.8e-6, cep_phase=0., propagation_direction=1 ):
-        """
+        r"""
         Define a linearly-polarized laser such that the transverse intensity
         profile is a flattened Gaussian **far from focus**, and a distribution
         with rings **in the focal plane**. (See `Santarsiero et al., J.
@@ -715,7 +715,7 @@ class FewCycleLaser( LaserProfile ):
 
     def __init__( self, a0, waist, tau_fwhm, z0, zf=None, theta_pol=0.,
                     lambda0=0.8e-6, cep_phase=0., propagation_direction=1 ):
-        """
+        r"""
         When a laser pulse is so short that it contains **only a few laser cycles**,
         the standard Gaussian profile :any:`GaussianLaser` is not well-adapted.
         This is because :any:`GaussianLaser` neglects the fact that different
@@ -906,15 +906,16 @@ class FromLasyFileLaser( LaserProfile ):
 
         # Check lasy version
         valid_version = False
-        if ('softwareVersion' in f.attrs):
+        if ('software' in f.attrs) and ('softwareVersion' in f.attrs):
+            software = f.attrs['software'].decode()
             version_string = f.attrs['softwareVersion'].decode()
             version_list = tuple(int(number) for number in version_string.split('.'))
-            if version_list >= (0,3,0):
+            if (software == "lasy") and (version_list >= (0,3,0)):
                 valid_version = True
         if not valid_version:
             raise RuntimeError(
                 "The `lasy` version that was used to create the file %s "
-                "is obsolete and not supported by FBPIC. Please upgrade your lasy "
+                "is obsolete and not supported by FBPIC.\nPlease upgrade your lasy "
                 "version to at least 0.3.0 (e.g. with `pip install --upgrade lasy`) "
                 "and re-create the file %s." %(filename, filename) )
 

@@ -10,7 +10,9 @@ import numpy as np
 from scipy.constants import e
 from .tracking import ParticleTracker
 from .elementary_process.ionization import Ionizer
+from .elementary_process.synchrotron import SynchrotronRadiator
 from .elementary_process.compton import ComptonScatterer
+from .spin import SpinTracker
 from .injection import BallisticBeforePlane, ContinuousInjector, \
                         generate_evenly_spaced
 
@@ -202,13 +204,17 @@ class Particles(object) :
 
         # By default, there is no particle tracking (see method track)
         self.tracker = None
+        # By default, there is no particle spin tracking
+        # (see method activate_spin_tracking)
+        self.spin_tracker = None
         # By default, the species experiences no elementary processes
         # (see method make_ionizable and activate_compton)
         self.ionizer = None
+        self.synchrotron_radiator = None
         self.compton_scatterer = None
         # Total number of quantities (necessary in MPI communications)
         self.n_integer_quantities = 0
-        self.n_float_quantities = 8 # x, y, z, ux, uy, uz, inv_gamma, w
+        self.n_float_quantities = 8  # x, y, z, ux, uy, uz, inv_gamma, w
 
         # Register particle shape
         self.particle_shape = particle_shape
@@ -286,6 +292,9 @@ class Particles(object) :
             # Copy the ionization data
             if self.ionizer is not None:
                 self.ionizer.send_to_gpu()
+            # Copy the spin tracking data
+            if self.spin_tracker is not None:
+                self.spin_tracker.send_to_gpu()
 
             # Modify flag accordingly
             self.data_is_on_gpu = True
@@ -328,6 +337,9 @@ class Particles(object) :
             # Copy the ionization data
             if self.ionizer is not None:
                 self.ionizer.receive_from_gpu()
+            # Copy the spin tracking data
+            if self.spin_tracker is not None:
+                self.spin_tracker.receive_from_gpu()
 
             # Modify flag accordingly
             self.data_is_on_gpu = False
@@ -370,6 +382,12 @@ class Particles(object) :
         if self.ionizer is not None:
             # All new particles start at the default ionization level
             uint_buffer[i_int,:] = self.ionizer.level_start
+        if self.spin_tracker is not None:
+            # Generate new spins for _injected_ particles
+            sx, sy, sz = self.spin_tracker.generate_new_spins(Ntot)
+            float_buffer[-3, :] = sx
+            float_buffer[-2, :] = sy
+            float_buffer[-1, :] = sz
 
         return( float_buffer, uint_buffer )
 
@@ -438,6 +456,48 @@ class Particles(object) :
             laser_waist, laser_ctau, laser_initial_z0,
             ratio_w_electron_photon, boost )
 
+    def activate_synchrotron( self, photon_energy_axis, theta_x_axis,
+                              theta_y_axis, gamma_cutoff=10.0,
+                              radiation_reaction=False, x_max=20,
+                              nSamples=2048, boost=None ):
+        """
+        Activate synchrotron radiation.
+
+        Parameters
+        ----------
+        photon_energy_axis: tuple
+            Parameters for the photon energy axis provided as
+            `(photon_energy_min, photon_energy_max, N_photon_energy)`, where
+            `photon_energy_min` and `photon_energy_max` are floats in Joules
+            and `N_photon_energy` is integer
+
+        theta_x_axis: tuple
+            Parameters for the x-elevation angle axis provided as
+            `(theta_x_min, theta_x_max, N_theta_x)`, where `theta_x_min`
+            and `theta_x_max` are floats in (rad) and `N_theta_x` is integer
+
+        theta_y_axis: tuple
+            Parameters for the y-elevation angle axis provided as
+            `(theta_y_min, theta_y_max, N_theta_y)`, where `theta_y_min`
+            and `theta_y_max` are floats in radians and `N_theta_y` is integer
+
+        gamma_cutoff: float (optional)
+            Minimal particle gamma factor for which radiation is calculated
+
+        radiation_reaction: bool
+            Whether to consider radiation reaction on the electrons
+
+        x_max: float (optional)
+            Extent of the sampling used for the spectral profile function
+
+        nSamples: integer (optional)
+            number of sampling points for the spectral profile function
+        """
+        self.synchrotron_radiator = SynchrotronRadiator(
+            self, photon_energy_axis, theta_x_axis, theta_y_axis,
+            gamma_cutoff, radiation_reaction, x_max, nSamples
+        )
+
     def make_ionizable(self, element, target_species,
                        level_start=0, level_max=None):
         """
@@ -495,6 +555,83 @@ class Particles(object) :
         if hasattr( self, 'int_sorting_buffer' ) is False and self.use_cuda:
             self.int_sorting_buffer = np.empty( self.Ntot, dtype=np.uint64 )
 
+    def activate_spin_tracking(self, sx_m=0., sy_m=0., sz_m=1.,
+                               anom=0.00115965218128, spin_distr='fixed'):
+        """
+        Activate spin tracking for this particle. This will
+        enable calculating the evolution of particle spin
+        vector throughout the simulation.
+
+        .. math::
+            \\frac{d\\boldsymbol{s}}{dt} = (\\boldsymbol{\\Omega}_T +
+             \\boldsymbol{\\Omega}_a) \\times \\boldsymbol{s}
+
+        where
+
+        .. math::
+            \\boldsymbol{\\Omega}_T = \\frac{q}{m}\\left(
+                 \\frac{\\boldsymbol{B}}{\\gamma} -
+                 \\frac{\\boldsymbol{B}}{1+\\gamma}
+                 \\times \\frac{\\boldsymbol{E}}{c} \\right)
+
+        and
+
+        .. math::
+            \\boldsymbol{\\Omega}_a = a_e \\frac{q}{m}\\left(
+                 \\boldsymbol{B} -
+                 \\frac{\\gamma}{1+\\gamma}\\boldsymbol{\\beta}
+                 (\\boldsymbol{\\beta}\\cdot\\boldsymbol{B}) -
+                 \\boldsymbol{\\beta} \\times \\frac{\\boldsymbol{E}}{c} \\right)
+
+        Here, :math:`a_e` is the anomalous magnetic moment of the particle,
+        :math:`\\gamma` is the Lorentz factor of the particle,
+        :math:`\\boldsymbol{\\beta}=\\boldsymbol{v}/c` is the normalised velocity
+
+        The implementation of the push algorithm is detailed in
+        https://arxiv.org/abs/2303.16966.
+
+        Note: spin tracking must be activated _before_ making
+        a species ionizable, otherwise an error will be raised.
+
+        Parameters
+        ----------
+        sx_m: float (dimensionless), optional
+            The species-averaged average projection onto the x-axis
+
+        sy_m: float (dimensionless), optional
+            The species-averaged average projection onto the y-axis
+
+        sz_m: float (dimensionless), optional
+            The species-averaged average projection onto the z-axis
+
+        anom: float
+            The anomalous magnetic moment of the particle.
+            Default value is that of an electron.
+
+        spin_distr: str, optional
+            If 'fixed', all particles will have a fixed spin value
+            equal to s{x,y,z}_m.
+            If 'rand', the spin vectors will be random, but with an
+            ensemble average defined by one of the values of
+            s{x,y,z}_m. The first non-zero mean component will be
+            used, with order of preference being x,y,z, ie if sx_m!=0,
+            the generated spins will have an ensemble averages of
+            <sx>=sx_m, <sy>=0, <sz>=0, or if sz_m!=0, <sx>=0, <sy>=0
+            and <sz>=sz_m.
+        """
+        # Warn about ionizer!
+        if self.ionizer is not None:
+            raise RuntimeError('\nIonizer already activated! Spin tracking '
+                               'must be activated __before__ the ionizer!\n')
+
+        self.spin_tracker = SpinTracker(species=self, dt=self.dt,
+                                        sx_m=sx_m, sy_m=sy_m,
+                                        sz_m=sz_m, anom=anom,
+                                        spin_distr=spin_distr)
+
+        # Update the number of float and int arrays
+        self.n_float_quantities += 3  # sx, sy, sz
+
     def handle_elementary_processes( self, t ):
         """
         Handle elementary processes for this species (e.g. ionization,
@@ -503,6 +640,9 @@ class Particles(object) :
         # Ionization
         if self.ionizer is not None:
             self.ionizer.handle_ionization( self )
+        # Synchrotron radiation
+        if self.synchrotron_radiator is not None:
+            self.synchrotron_radiator.handle_radiation()
         # Compton scattering
         if self.compton_scatterer is not None:
             self.compton_scatterer.handle_scattering( self, t )
@@ -525,6 +665,10 @@ class Particles(object) :
                             (self, 'Bx'), (self, 'By'), (self, 'Bz') ]
         if self.ionizer is not None:
             attr_list += [ (self.ionizer,'w_times_level') ]
+        if self.spin_tracker is not None:
+            attr_list += [(self.spin_tracker, 'sx'), \
+                          (self.spin_tracker, 'sy'), \
+                          (self.spin_tracker, 'sz')]
         for attr in attr_list:
             # Get particle GPU array
             particle_array = getattr( attr[0], attr[1] )
@@ -579,6 +723,9 @@ class Particles(object) :
             if self.ionizer is not None:
                 raise NotImplementedError('Ballistic injection before a plane '
                     'is not implemented for ionizable particles.')
+            if self.spin_tracker is not None:
+                raise NotImplementedError('Ballistic injection before a plane '
+                    'is not implemented for particles with spin tracking.')
         else:
             z_plane = None
 
