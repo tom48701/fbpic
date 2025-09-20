@@ -283,11 +283,11 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
 
         # Register the dimensionality of the diagnostic
         self.Ndims = len(phase_space)
-        
+
         # storage of the minimum and maximum of each particle quantity
-        self.quant_min = np.empty(self.Ndims) 
+        self.quant_min = np.empty(self.Ndims)
         self.quant_max = np.empty(self.Ndims)
-        
+
         # For each species, get the particle arrays to be written
         self.array_quantities_dict = {}
 
@@ -314,10 +314,10 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
         """
         # Generic attributes
         grp.attrs["particleShape"] = 1.
-        grp.attrs["currentDeposition"] = np.string_("directMorseNielson")
-        grp.attrs["particleSmoothing"] = np.string_("none")
-        grp.attrs["particlePush"] = np.string_("Vay")
-        grp.attrs["particleInterpolation"] = np.string_("uniform")
+        grp.attrs["currentDeposition"] = np.bytes_("directMorseNielson")
+        grp.attrs["particleSmoothing"] = np.bytes_("none")
+        grp.attrs["particlePush"] = np.bytes_("Vay")
+        grp.attrs["particleInterpolation"] = np.bytes_("uniform")
 
     def setup_openpmd_species_record( self, grp, quantity ) :
         """
@@ -398,7 +398,7 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
 
             # Select the particles that will be included
             select_array = self.apply_selection( species )
-            
+
             # get the total size of the eventual histogram
             Ntot = np.prod(self.bins)
 
@@ -416,7 +416,7 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
             if species.use_cuda :
                 species.send_particles_to_gpu()
 
-    def write_phasespaces( self, phasespace_grp, species, Ntot, 
+    def write_phasespaces( self, phasespace_grp, species, Ntot,
                           select_array, phasespace_data ) :
         """
         Write all the phase space sets for one given species
@@ -562,43 +562,43 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
         dset.attrs['depositedQuantityUnitDimension'] = self.parse_quantity_dimensions(self.deposit)
 
         # Generic attributes
-        dset.attrs["dataOrder"] = np.string_("C")
-        dset.attrs["fieldSmoothing"] = np.string_("none")
-        
+        dset.attrs["dataOrder"] = np.bytes_("C")
+        dset.attrs["fieldSmoothing"] = np.bytes_("none")
+
     def get_global_sample_limits(self, root=0):
-        """ 
+        """
         Determine the global maxima/minima of the sample from the local values
         then broadcast the result.
         """
         comm = self.comm
-        
+
         # gather all the mins and maxs
         if self.size > 1:
-            allmax = comm.gather_ptcl_array( self.quant_max, comm.size*[self.Ndims], 
-                                                 comm.size*self.Ndims, root=root) 
-            allmin = comm.gather_ptcl_array( self.quant_min, comm.size*[self.Ndims], 
-                                                 comm.size*self.Ndims, root=root)  
+            allmax = comm.gather_ptcl_array( self.quant_max, comm.size*[self.Ndims],
+                                                 comm.size*self.Ndims, root=root)
+            allmin = comm.gather_ptcl_array( self.quant_min, comm.size*[self.Ndims],
+                                                 comm.size*self.Ndims, root=root)
         else:
             allmax = self.quant_max
             allmin = self.quant_min
-            
+
         if self.rank==root:
             # reshape the mins/maxs
             allmax = allmax.reshape((comm.size, self.Ndims))
             allmin = allmin.reshape((comm.size, self.Ndims))
-            
+
             # reduce the mins/maxs ignoring nans
             # if the array is all nans, nanmin/max warn the user and return nan
-            # first suppress the warnings, 
+            # first suppress the warnings,
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 self.quant_min[:] = np.nanmin(allmin, axis=0)
                 self.quant_max[:] = np.nanmax(allmax, axis=0)
-                
+
             # then replace any remaining nans with dummy limits
             self.quant_max[np.isnan(self.quant_max)] =  0.5
             self.quant_min[np.isnan(self.quant_min)] = -0.5
-            
+
         # broadcast the now global mins and maxs
         if self.size > 1:
             comm.mpi_comm.Bcast(self.quant_min, root=root)
@@ -610,8 +610,8 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
         """
         # Initialise the list of bin edges
         bin_edges = []
-        
-        # Build the bins edges from the provided limits and global limits 
+
+        # Build the bins edges from the provided limits and global limits
         # and deal with the moving window if required
         if self.edges is None:
             # If no edges are specified, use the global limits (auto-scale)
@@ -622,11 +622,11 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
                 # start with a pair of dummy limits
                 i_min = np.nan
                 i_max = np.nan
-                
+
                 # any `None` limits need to be replaced with the global ranges.
-                # further, if the phase space being binned is z and comoving 
+                # further, if the phase space being binned is z and comoving
                 # limits are in place, adjust the actual limits
-                
+
                 # single `None`: autoscale upper and lower
                 if self.edges[i] is None:
                     i_min = self.quant_min[i]
@@ -636,31 +636,37 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
                     if (self.phase_space[i] == 'z') and (self.move_with_window):
                         if self.edges[i][0] is not None:
                             zmin = self.comm._zmin_global_domain
-                            i_min = zmin + (i_min-self.zmin_init)
-                        elif self.edges[i][1] is not None:
+                            i_min = zmin + (self.edges[i][0]-self.zmin_init)
+                        else:
+                            i_min = self.quant_min[i]
+
+                        if self.edges[i][1] is not None:
                             zmin = self.comm._zmin_global_domain
-                            i_max = zmin + (i_max-self.zmin_init)
-                    else:    
+                            i_max = zmin + (self.edges[i][1]-self.zmin_init)
+                        else:
+                            i_max = self.quant_max[i]
+
+                    else:
                         # non-z quantities next
                         if self.edges[i][0] == None:
                             i_min = self.quant_min[i]
                         else:
                             i_min = self.edges[i][0]
-                            
+
                         if self.edges[i][1] == None:
                             i_max = self.quant_max[i]
                         else:
-                            i_max = self.edges[i][1]                
+                            i_max = self.edges[i][1]
 
                 bin_edges.append( (i_min, i_max) )
-                
+
         return bin_edges
-                
+
     def write_dataset( self, phasespace_grp, species, path,
                        Ntot, select_array ) :
         """
         Create and write a histogram
-        
+
         Parameters
         ----------
         phasespace_grp : an h5py.Group
@@ -688,9 +694,9 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
             # in case the number of particles is not exactly the same.)
             if path in phasespace_grp:
                 del phasespace_grp[path]
-            
+
             dset = phasespace_grp.create_dataset(path, datashape, dtype=dtype )
-        
+
         # get the total number of particles to consider on this rank
         Ntot = select_array.sum()
 
@@ -700,11 +706,11 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
 
         # contruct the sample to be binned
         sample = np.zeros((Ntot, self.Ndims))
-            
+
         # only do work if there is going to be data at the end of it
         if Ntot > 0:
             for i in range(self.Ndims):
-                
+
                 # get the particle quantity
                 quant = self.get_particle_quantity(species, self.phase_space[i],
                                                    select_array)
@@ -714,14 +720,13 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
                 # record the min/max of each quantity
                 self.quant_min[i] = quant.min()
                 self.quant_max[i] = quant.max()
-                
+
         # get and broadcast the global sample limits
         self.get_global_sample_limits()
-        
         # compute the bin edges
         bin_edges = self.get_bin_edges()
-        
-        if Ntot > 0:      
+
+        if Ntot > 0:
             # Get the particle weights
             if self.unweighted:
                 weights = np.ones(Ntot)
@@ -733,14 +738,14 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
                 weights *= deposit
         else: # dummy zero-length weights
             weights = np.ones(0)
-            
+
         # Generate the histogram
         # this must still be done for zero-length samples as well
         # we still need to compute the edges to write to disk on the root
         hist, edges = np.histogramdd(sample, bins=self.bins,
                                         density=False, weights=weights,
                                         range=bin_edges)
-        
+
         # reduce the histograms from each rank onto the root
         if self.rank == 0:
             allhist = np.empty_like(hist)
@@ -751,7 +756,7 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
             self.comm.mpi_comm.Reduce(np.ascontiguousarray(hist), allhist, root=0)
         else:
             allhist = hist
-            
+
         if self.rank==0:
             dset[:] = allhist
             # Fill out the dataset and metadata for the axes
@@ -760,7 +765,7 @@ class PhaseSpaceDiagnostic(OpenPMDDiagnostic) :
             for axis in edges:
                 dx.append(axis[1]-axis[0])
                 xmin.append(axis[0])
-                
+
             self.setup_openpmd_mesh_record( dset, dx, xmin )
 
     def get_particle_quantity( self, species, quantity, select_array):
