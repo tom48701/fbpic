@@ -481,16 +481,16 @@ class Particles(object) :
             `(theta_y_min, theta_y_max, N_theta_y)`, where `theta_y_min`
             and `theta_y_max` are floats in radians and `N_theta_y` is integer
 
-        gamma_cutoff: float (optional)
+        gamma_cutoff: float, optional
             Minimal particle gamma factor for which radiation is calculated
 
         radiation_reaction: bool
             Whether to consider radiation reaction on the electrons
 
-        x_max: float (optional)
+        x_max: float, optional
             Extent of the sampling used for the spectral profile function
 
-        nSamples: integer (optional)
+        nSamples: integer, optional
             number of sampling points for the spectral profile function
         """
         self.synchrotron_radiator = SynchrotronRadiator(
@@ -563,29 +563,29 @@ class Particles(object) :
         vector throughout the simulation.
 
         .. math::
-            \\frac{d\\boldsymbol{s}}{dt} = (\\boldsymbol{\\Omega}_T +
-             \\boldsymbol{\\Omega}_a) \\times \\boldsymbol{s}
+            \frac{d\boldsymbol{s}}{dt} = (\boldsymbol{\Omega}_T +
+             \boldsymbol{\Omega}_a) \times \boldsymbol{s}
 
         where
 
         .. math::
-            \\boldsymbol{\\Omega}_T = \\frac{q}{m}\\left(
-                 \\frac{\\boldsymbol{B}}{\\gamma} -
-                 \\frac{\\boldsymbol{B}}{1+\\gamma}
-                 \\times \\frac{\\boldsymbol{E}}{c} \\right)
+            \boldsymbol{\Omega}_T = \frac{q}{m}\left(
+                 \frac{\boldsymbol{B}}{\gamma} -
+                 \frac{\boldsymbol{B}}{1+\gamma}
+                 \times \frac{\boldsymbol{E}}{c} \right)
 
         and
 
         .. math::
-            \\boldsymbol{\\Omega}_a = a_e \\frac{q}{m}\\left(
-                 \\boldsymbol{B} -
-                 \\frac{\\gamma}{1+\\gamma}\\boldsymbol{\\beta}
-                 (\\boldsymbol{\\beta}\\cdot\\boldsymbol{B}) -
-                 \\boldsymbol{\\beta} \\times \\frac{\\boldsymbol{E}}{c} \\right)
+            \boldsymbol{\Omega}_a = a_e \frac{q}{m}\left(
+                 \boldsymbol{B} -
+                 \frac{\gamma}{1+\gamma}\boldsymbol{\beta}
+                 (\boldsymbol{\beta}\cdot\boldsymbol{B}) -
+                 \boldsymbol{\beta} \times \frac{\boldsymbol{E}}{c} \right)
 
         Here, :math:`a_e` is the anomalous magnetic moment of the particle,
-        :math:`\\gamma` is the Lorentz factor of the particle,
-        :math:`\\boldsymbol{\\beta}=\\boldsymbol{v}/c` is the normalised velocity
+        :math:`\gamma` is the Lorentz factor of the particle,
+        :math:`\boldsymbol{\beta}=\boldsymbol{v}/c` is the normalised velocity
 
         The implementation of the push algorithm is detailed in
         https://arxiv.org/abs/2303.16966.

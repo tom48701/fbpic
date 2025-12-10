@@ -51,6 +51,9 @@ the proper profile.
 Optionally the plugin can deduce the photon momentum from the emitting electron in order to 
 simulate the classical radiation reaction.
 
+.. warning::
+    Currently this plugin only works in the lab-frame simulations.
+
 Plugin is activated for the chosen particle specie (electron) with the following method:
 
 .. automethod:: fbpic.particles.Particles.activate_synchrotron
@@ -59,4 +62,4 @@ The calculated radiation data in the dimensionless units
 (:math:`\partial^2 E_{rad} / \partial \hbar \omega_{ph} \partial \theta`) can be added as a 
 standard openPMD diagnostics:
 
-.. autoclass:: fbpic.openpmd_diag.SRDiagnostic
+.. autoclass:: fbpic.openpmd_diag.SynchrotronRadiationDiagnostic

@@ -7,7 +7,7 @@ from scipy.integrate import quad
 from fbpic.main import Simulation
 from fbpic.lpa_utils.bunch import add_particle_bunch_gaussian
 from fbpic.lpa_utils.external_fields import ExternalField
-from fbpic.openpmd_diag import SRDiagnostic
+from fbpic.openpmd_diag import SynchrotronRadiationDiagnostic
 from openpmd_viewer import OpenPMDTimeSeries
 
 # Whether to use the GPU
@@ -107,8 +107,8 @@ def run_simulation():
 
     # Add diagnostics
     sim.diags = [
-                  SRDiagnostic(period=N_step,
-                    sr_object=bunch.synchrotron_radiator,
+                  SynchrotronRadiationDiagnostic(period=N_step,
+                    species={'bunch': bunch},
                     comm=sim.comm)
                 ]
 
@@ -117,14 +117,14 @@ def run_simulation():
 
 def check_energy():
     ts = OpenPMDTimeSeries('./diags/hdf5/')
-    radiation_fbpic, info = ts.get_field('radiation', t=ts.t[-1], slice_across=None)
+    radiation_fbpic, info = ts.get_field('radiation_bunch', t=ts.t[-1], slice_across=None)
     rad_energy = radiation_fbpic.sum() * info.dx * info.dy * info.dz
     err = np.abs( rad_energy - rad_energy_theory ) / rad_energy
     assert err<0.06
 
 def check_angle():
     ts = OpenPMDTimeSeries('./diags/hdf5/')
-    radiation_fbpic, info = ts.get_field('radiation', t=ts.t[-1], slice_across=None)
+    radiation_fbpic, info = ts.get_field('radiation_bunch', t=ts.t[-1], slice_across=None)
     spot = radiation_fbpic.sum(-1)
     thx = info.x
 
@@ -138,7 +138,7 @@ def check_angle():
 
 def check_spectrum():
     ts = OpenPMDTimeSeries('./diags/hdf5/')
-    radiation_fbpic, info = ts.get_field('radiation', t=ts.t[-1], slice_across=None)
+    radiation_fbpic, info = ts.get_field('radiation_bunch', t=ts.t[-1], slice_across=None)
     spect_1d = radiation_fbpic[
         radiation_fbpic.shape[0]//2, radiation_fbpic.shape[1]//2
     ]
